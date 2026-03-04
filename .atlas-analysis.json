@@ -1,0 +1,142 @@
+{
+  "projectType": "saas",
+  "projectName": "Alliance IGAD Innovation Hub",
+  "projectDescription": "AI-powered platform for proposal writing and administrative prompt management, built on serverless AWS infrastructure.",
+  "theme": "palm",
+  "primaryColor": "#2563eb",
+  "lightColor": "#3b82f6",
+  "darkColor": "#1e40af",
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Get Started",
+            "pages": [
+              "introduction",
+              "quickstart",
+              "architecture"
+            ]
+          },
+          {
+            "group": "Core Features",
+            "pages": [
+              "features/proposal-writer",
+              "features/document-management",
+              "features/admin-prompts",
+              "features/authentication"
+            ]
+          },
+          {
+            "group": "Development",
+            "pages": [
+              "development/setup",
+              "development/frontend",
+              "development/backend",
+              "development/infrastructure"
+            ]
+          },
+          {
+            "group": "Deployment",
+            "pages": [
+              "deployment/overview",
+              "deployment/testing",
+              "deployment/production",
+              "deployment/environment-config"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "API Reference",
+        "groups": [
+          {
+            "group": "Proposals",
+            "pages": [
+              "api/proposals/create",
+              "api/proposals/list",
+              "api/proposals/get",
+              "api/proposals/update",
+              "api/proposals/delete"
+            ]
+          },
+          {
+            "group": "Proposal Workflow",
+            "pages": [
+              "api/proposals/analyze-rfp",
+              "api/proposals/analyze-concept",
+              "api/proposals/generate-concept",
+              "api/proposals/generate-template",
+              "api/proposals/analyze-feedback"
+            ]
+          },
+          {
+            "group": "Documents",
+            "pages": [
+              "api/documents/upload",
+              "api/documents/delete",
+              "api/documents/list"
+            ]
+          },
+          {
+            "group": "Admin",
+            "pages": [
+              "api/admin/prompts",
+              "api/admin/settings",
+              "api/admin/users"
+            ]
+          },
+          {
+            "group": "Authentication",
+            "pages": [
+              "api/auth/login",
+              "api/auth/register",
+              "api/auth/reset-password"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "keyFeatures": [
+    "Multi-step AI-powered proposal generation",
+    "RFP document analysis and processing",
+    "Concept document evaluation and refinement",
+    "Proposal structure and workplan generation",
+    "Draft feedback and quality analysis",
+    "Administrative prompt management system",
+    "AWS Cognito authentication",
+    "Document upload and vectorization",
+    "AWS Bedrock AI integration",
+    "Serverless Lambda architecture"
+  ],
+  "publicApiSurface": [
+    "POST /api/proposals",
+    "GET /api/proposals",
+    "GET /api/proposals/{proposal_id}",
+    "PUT /api/proposals/{proposal_id}",
+    "DELETE /api/proposals/{proposal_id}",
+    "POST /api/proposals/{proposal_id}/analyze-rfp",
+    "GET /api/proposals/{proposal_id}/analysis-status",
+    "POST /api/proposals/{proposal_id}/analyze-concept",
+    "GET /api/proposals/{proposal_id}/concept-status",
+    "POST /api/proposals/{proposal_id}/generate-concept-document",
+    "GET /api/proposals/{proposal_id}/concept-document-status",
+    "POST /api/proposals/{proposal_id}/generate-proposal-template",
+    "POST /api/proposals/{proposal_id}/analyze-draft-feedback",
+    "POST /api/proposals/{proposal_id}/documents/upload",
+    "POST /api/proposals/{proposal_id}/documents/upload-reference-file",
+    "POST /api/proposals/{proposal_id}/documents/upload-supporting-file",
+    "DELETE /api/proposals/{proposal_id}/documents/{document_type}",
+    "POST /api/auth/login",
+    "POST /api/auth/register",
+    "POST /api/auth/refresh",
+    "POST /api/auth/forgot-password",
+    "POST /api/auth/reset-password",
+    "GET /api/admin/prompts",
+    "POST /api/admin/prompts",
+    "PUT /api/admin/prompts/{prompt_id}",
+    "DELETE /api/admin/prompts/{prompt_id}"
+  ]
+}
