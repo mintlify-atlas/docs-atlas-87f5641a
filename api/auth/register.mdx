@@ -1,0 +1,459 @@
+---
+title: 'Register'
+api: 'POST /api/auth/register'
+description: 'Register new users in AWS Cognito User Pool'
+---
+
+## Overview
+
+<Warning>
+  **Implementation Status:** This endpoint is not yet implemented in the codebase.
+  
+  The authentication system currently relies on AWS Cognito User Pool with admin-created users. Self-service registration will be added in a future release.
+</Warning>
+
+The register endpoint will allow new users to create accounts in the IGAD Innovation Hub platform. Registration will use AWS Cognito's sign-up flow with email verification.
+
+## Planned Implementation
+
+### Expected Request
+
+<ParamField body="email" type="string" required>
+  User's email address. Must be unique and will require verification.
+  
+  **Format:** Valid email address
+  
+  **Example:** `newuser@igad.int`
+</ParamField>
+
+<ParamField body="password" type="string" required>
+  User's chosen password. Must meet Cognito password requirements:
+  - Minimum 8 characters
+  - At least one uppercase letter
+  - At least one lowercase letter
+  - At least one number
+  - At least one special character
+  
+  **Example:** `SecureP@ssw0rd123`
+</ParamField>
+
+<ParamField body="name" type="string" required>
+  User's full name for display purposes.
+  
+  **Example:** `John Doe`
+</ParamField>
+
+<ParamField body="organization" type="string">
+  User's organization or institution (optional).
+  
+  **Example:** `IGAD Climate Prediction and Applications Centre`
+</ParamField>
+
+<ParamField body="country" type="string">
+  User's country (optional). Useful for regional analytics.
+  
+  **Example:** `Kenya`
+</ParamField>
+
+### Expected Request Example
+
+```json
+{
+  "email": "newuser@igad.int",
+  "password": "SecureP@ssw0rd123",
+  "name": "John Doe",
+  "organization": "IGAD ICPAC",
+  "country": "Kenya"
+}
+```
+
+## Expected Response
+
+### Success Response (201 Created)
+
+<ResponseField name="user_id" type="string" required>
+  Cognito user identifier (sub).
+</ResponseField>
+
+<ResponseField name="email" type="string" required>
+  Registered email address.
+</ResponseField>
+
+<ResponseField name="email_verified" type="boolean" required>
+  Always `false` on registration. User must verify email via code.
+</ResponseField>
+
+<ResponseField name="name" type="string" required>
+  User's display name.
+</ResponseField>
+
+<ResponseField name="message" type="string" required>
+  Instructions for email verification.
+</ResponseField>
+
+<ResponseField name="verification_required" type="boolean" required>
+  Always `true`. Indicates user must verify email before login.
+</ResponseField>
+
+### Expected Success Response Example
+
+```json
+{
+  "user_id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+  "email": "newuser@igad.int",
+  "email_verified": false,
+  "name": "John Doe",
+  "message": "Registration successful. Please check your email for verification code.",
+  "verification_required": true
+}
+```
+
+## Expected Error Responses
+
+### 400 Bad Request - Email Already Exists
+
+Returned when email is already registered.
+
+```json
+{
+  "detail": "An account with this email already exists"
+}
+```
+
+**Cognito Error:** `UsernameExistsException`
+
+### 400 Bad Request - Invalid Password
+
+Returned when password doesn't meet requirements.
+
+```json
+{
+  "detail": "Password does not meet requirements: Must contain uppercase, lowercase, number, and special character"
+}
+```
+
+**Cognito Error:** `InvalidPasswordException`
+
+### 400 Bad Request - Invalid Email Format
+
+Returned when email format is invalid.
+
+```json
+{
+  "detail": "Invalid email format"
+}
+```
+
+**Cognito Error:** `InvalidParameterException`
+
+### 429 Too Many Requests - Rate Limit Exceeded
+
+Returned when too many registration attempts.
+
+```json
+{
+  "detail": "Too many registration attempts. Please try again later."
+}
+```
+
+**Cognito Error:** `TooManyRequestsException`
+
+### 500 Internal Server Error
+
+Returned for unexpected registration failures.
+
+```json
+{
+  "detail": "Registration failed: {error_message}"
+}
+```
+
+## Planned Implementation Details
+
+### AWS Cognito Sign-Up Flow
+
+The registration will use Cognito's `sign_up` API:
+
+```python
+from botocore.exceptions import ClientError
+import boto3
+
+cognito_client = boto3.client('cognito-idp', region_name='us-east-1')
+
+try:
+    response = cognito_client.sign_up(
+        ClientId=os.getenv('COGNITO_CLIENT_ID'),
+        Username=email,
+        Password=password,
+        UserAttributes=[
+            {'Name': 'email', 'Value': email},
+            {'Name': 'name', 'Value': name},
+            {'Name': 'custom:organization', 'Value': organization},
+            {'Name': 'custom:country', 'Value': country},
+        ]
+    )
+    user_id = response['UserSub']
+except ClientError as e:
+    error_code = e.response['Error']['Code']
+    # Handle specific errors
+```
+
+### Email Verification Flow
+
+After registration:
+
+1. Cognito sends verification email with 6-digit code
+2. User must call `/api/auth/verify-email` with:
+   - `email`
+   - `code`
+3. Account becomes active after verification
+4. User can then call `/api/auth/login`
+
+### Custom Attributes
+
+Cognito User Pool should be configured with custom attributes:
+
+- `custom:organization` (String, mutable)
+- `custom:country` (String, mutable)
+- `custom:role` (String, mutable) - Default: "user"
+
+<Note>
+  Custom attributes must be defined in Cognito User Pool before registration endpoint is implemented.
+</Note>
+
+### Auto-Confirmation (Optional)
+
+For internal IGAD domains, auto-confirm emails:
+
+```python
+if email.endswith('@igad.int'):
+    # Auto-confirm for internal users
+    cognito_client.admin_confirm_sign_up(
+        UserPoolId=os.getenv('COGNITO_USER_POOL_ID'),
+        Username=user_id
+    )
+```
+
+## Email Verification Endpoint (To Be Implemented)
+
+### POST /api/auth/verify-email
+
+**Request:**
+```json
+{
+  "email": "newuser@igad.int",
+  "code": "123456"
+}
+```
+
+**Response (200 OK):**
+```json
+{
+  "success": true,
+  "message": "Email verified successfully. You can now log in.",
+  "email_verified": true
+}
+```
+
+**Implementation:**
+```python
+cognito_client.confirm_sign_up(
+    ClientId=os.getenv('COGNITO_CLIENT_ID'),
+    Username=email,
+    ConfirmationCode=code
+)
+```
+
+## Resend Verification Code Endpoint (To Be Implemented)
+
+### POST /api/auth/resend-verification
+
+**Request:**
+```json
+{
+  "email": "newuser@igad.int"
+}
+```
+
+**Response (200 OK):**
+```json
+{
+  "success": true,
+  "message": "Verification code resent. Check your email.",
+  "delivery": {
+    "DeliveryMedium": "EMAIL",
+    "Destination": "n***@igad.int"
+  }
+}
+```
+
+**Implementation:**
+```python
+cognito_client.resend_confirmation_code(
+    ClientId=os.getenv('COGNITO_CLIENT_ID'),
+    Username=email
+)
+```
+
+## Expected Usage Example
+
+### JavaScript (Fetch)
+
+```javascript
+// Step 1: Register
+const registerResponse = await fetch('https://api.igad.int/api/auth/register', {
+  method: 'POST',
+  headers: {
+    'Content-Type': 'application/json',
+  },
+  body: JSON.stringify({
+    email: 'newuser@igad.int',
+    password: 'SecureP@ssw0rd123',
+    name: 'John Doe',
+    organization: 'IGAD ICPAC',
+    country: 'Kenya',
+  }),
+})
+
+const registerData = await registerResponse.json()
+
+if (registerResponse.ok) {
+  console.log('Registration successful:', registerData.message)
+  
+  // Step 2: Prompt user for verification code
+  const verificationCode = prompt('Enter verification code from email:')
+  
+  // Step 3: Verify email
+  const verifyResponse = await fetch('https://api.igad.int/api/auth/verify-email', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      email: 'newuser@igad.int',
+      code: verificationCode,
+    }),
+  })
+  
+  const verifyData = await verifyResponse.json()
+  
+  if (verifyResponse.ok) {
+    console.log('Email verified. You can now log in.')
+    // Redirect to login page
+  }
+} else {
+  console.error('Registration failed:', registerData.detail)
+}
+```
+
+### Python (Requests)
+
+```python
+import requests
+
+# Step 1: Register
+register_response = requests.post(
+    'https://api.igad.int/api/auth/register',
+    json={
+        'email': 'newuser@igad.int',
+        'password': 'SecureP@ssw0rd123',
+        'name': 'John Doe',
+        'organization': 'IGAD ICPAC',
+        'country': 'Kenya'
+    }
+)
+
+if register_response.status_code == 201:
+    print("Registration successful. Check email for verification code.")
+    
+    # Step 2: Verify email (after receiving code)
+    verification_code = input("Enter verification code: ")
+    
+    verify_response = requests.post(
+        'https://api.igad.int/api/auth/verify-email',
+        json={
+            'email': 'newuser@igad.int',
+            'code': verification_code
+        }
+    )
+    
+    if verify_response.status_code == 200:
+        print("Email verified. You can now log in.")
+else:
+    print(f"Registration failed: {register_response.json()['detail']}")
+```
+
+## Current Workaround
+
+Until self-service registration is implemented, users must be created by administrators using:
+
+1. **AWS Console:** Cognito User Pools → Users → Create user
+2. **AWS CLI:**
+   ```bash
+   aws cognito-idp admin-create-user \
+     --user-pool-id $COGNITO_USER_POOL_ID \
+     --username user@igad.int \
+     --user-attributes Name=email,Value=user@igad.int Name=name,Value="John Doe" \
+     --temporary-password TempP@ssw0rd123 \
+     --message-action SUPPRESS
+   ```
+3. **Backend Script:** Contact system administrator
+
+<Note>
+  Admin-created users must change their temporary password on first login via the `NEW_PASSWORD_REQUIRED` challenge.
+</Note>
+
+## Related Endpoints
+
+- [POST /api/auth/login](/api/auth/login) - Login after email verification
+- [POST /api/auth/verify-email](/api/auth/verify-email) - Verify email with code (to be implemented)
+- [POST /api/auth/resend-verification](/api/auth/resend-verification) - Resend verification code (to be implemented)
+- [POST /api/auth/forgot-password](/api/auth/forgot-password) - Reset password
+
+## Implementation Checklist
+
+<Note>
+  **For Developers:** Implementation checklist for registration feature
+</Note>
+
+- [ ] Configure Cognito User Pool custom attributes
+- [ ] Implement `POST /api/auth/register` endpoint
+- [ ] Implement `POST /api/auth/verify-email` endpoint
+- [ ] Implement `POST /api/auth/resend-verification` endpoint
+- [ ] Add rate limiting for registration attempts
+- [ ] Configure email templates in Cognito
+- [ ] Add registration form to frontend
+- [ ] Add email verification UI flow
+- [ ] Update admin dashboard to disable manual user creation
+- [ ] Add analytics for registration funnel
+- [ ] Test with various email providers
+- [ ] Document registration flow for users
+
+## Security Considerations
+
+### Password Requirements
+
+Enforce strong password policies:
+- Minimum 8 characters (consider 12+ for higher security)
+- Complexity requirements (uppercase, lowercase, number, special char)
+- Check against common password lists
+- Prevent reuse of recent passwords
+
+### Email Verification
+
+- Verification codes expire after 24 hours
+- Limit resend attempts to prevent abuse
+- Use Cognito's built-in email service or configure SES
+
+### Rate Limiting
+
+- Limit registration attempts per IP: 5 per hour
+- Limit verification attempts: 3 per email per hour
+- Implement CAPTCHA for public registration
+
+### Data Privacy
+
+- Comply with GDPR and data protection regulations
+- Allow users to delete their accounts
+- Log registration events for audit trail
+- Never store passwords in plain text (Cognito handles this)

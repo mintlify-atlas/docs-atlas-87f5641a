@@ -1,0 +1,425 @@
+---
+title: Authentication
+description: AWS Cognito-based authentication with JWT tokens and role-based access control
+---
+
+The Alliance IGAD Innovation Hub uses AWS Cognito for secure user authentication and authorization, providing login, password reset, and session management capabilities.
+
+## Authentication flow
+
+<Steps>
+  <Step title="User login">
+    User submits email and password to the login endpoint.
+  </Step>
+
+  <Step title="Cognito verification">
+    AWS Cognito validates credentials using the `ADMIN_USER_PASSWORD_AUTH` flow.
+  </Step>
+
+  <Step title="Token issuance">
+    If successful, Cognito returns JWT tokens:
+    - **Access Token**: For API authorization (1 hour expiry)
+    - **Refresh Token**: For obtaining new access tokens (30 days expiry)
+    - **ID Token**: Contains user information and claims
+  </Step>
+
+  <Step title="Client storage">
+    Client stores tokens securely (localStorage or sessionStorage) and includes the access token in subsequent API requests.
+  </Step>
+</Steps>
+
+## Login
+
+### Endpoint
+
+```bash
+curl -X POST https://api.igad-hub.com/api/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{
+    "username": "user@example.com",
+    "password": "SecurePassword123!"
+  }'
+```
+
+### Response
+
+```json
+{
+  "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+  "refresh_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+  "id_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+  "token_type": "Bearer",
+  "expires_in": 3600,
+  "user": {
+    "user_id": "abc123-def456-ghi789",
+    "email": "user@example.com",
+    "name": "John Doe",
+    "is_admin": false
+  }
+}
+```
+
+### Password change required
+
+For new users or after admin password reset:
+
+```json
+{
+  "challenge": "NEW_PASSWORD_REQUIRED",
+  "session": "AYABeB...session-token",
+  "user_attributes": {
+    "email": "user@example.com",
+    "email_verified": "true"
+  },
+  "message": "New password required. Call /auth/change-password with session and new password."
+}
+```
+
+## JWT tokens
+
+### Access token
+
+Used for API authorization:
+
+```
+Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+```
+
+Decoded payload:
+
+```json
+{
+  "sub": "abc123-def456-ghi789",
+  "email": "user@example.com",
+  "iss": "https://cognito-idp.us-east-1.amazonaws.com/us-east-1_IMi3kSuB8",
+  "exp": 1705329600,
+  "iat": 1705326000,
+  "token_use": "access"
+}
+```
+
+**Expiry**: 1 hour (3600 seconds)
+
+### Refresh token
+
+Used to obtain new access tokens:
+
+```bash
+curl -X POST https://api.igad-hub.com/api/auth/refresh \
+  -H "Content-Type: application/json" \
+  -d '{"refresh_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."}'
+```
+
+Response:
+
+```json
+{
+  "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+  "id_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+  "token_type": "Bearer",
+  "expires_in": 3600
+}
+```
+
+**Expiry**: 30 days
+
+### ID token
+
+Contains user information and custom attributes:
+
+```json
+{
+  "sub": "abc123-def456-ghi789",
+  "email": "user@example.com",
+  "name": "John Doe",
+  "custom:is_admin": "false",
+  "email_verified": true,
+  "iss": "https://cognito-idp.us-east-1.amazonaws.com/us-east-1_IMi3kSuB8",
+  "cognito:username": "abc123-def456-ghi789",
+  "exp": 1705329600,
+  "iat": 1705326000
+}
+```
+
+## Password reset
+
+### Two-step process
+
+<Steps>
+  <Step title="Request reset code">
+    User submits their email to receive a verification code.
+
+    ```bash
+    curl -X POST https://api.igad-hub.com/api/auth/forgot-password \
+      -H "Content-Type: application/json" \
+      -d '{"email": "user@example.com"}'
+    ```
+
+    Response:
+    ```json
+    {
+      "message": "Password reset code sent to u***@example.com",
+      "code_delivery_details": {
+        "destination": "u***@example.com",
+        "delivery_medium": "EMAIL"
+      }
+    }
+    ```
+  </Step>
+
+  <Step title="Reset password with code">
+    User submits the code and new password.
+
+    ```bash
+    curl -X POST https://api.igad-hub.com/api/auth/reset-password \
+      -H "Content-Type: application/json" \
+      -d '{
+        "email": "user@example.com",
+        "code": "123456",
+        "new_password": "NewSecurePassword123!"
+      }'
+    ```
+
+    Response:
+    ```json
+    {
+      "message": "Password reset successfully"
+    }
+    ```
+  </Step>
+</Steps>
+
+### Code expiration
+
+Verification codes expire after **24 hours**.
+
+### Password requirements
+
+- Minimum 8 characters
+- At least one uppercase letter
+- At least one lowercase letter
+- At least one number
+- At least one special character
+- Cannot contain username or email
+
+## Role-based access control
+
+### User roles
+
+The platform supports two roles:
+
+| Role | Permissions |
+|------|-------------|
+| **User** | Create proposals, upload documents, generate content |
+| **Admin** | All user permissions + prompt management, user management |
+
+### Admin detection
+
+Admin status is determined by Cognito group membership:
+
+```python
+# From source code: backend/app/tools/auth/service.py
+groups_response = cognito_client.admin_list_groups_for_user(
+    Username=username,
+    UserPoolId=COGNITO_USER_POOL_ID
+)
+
+groups = [g["GroupName"] for g in groups_response.get("Groups", [])]
+is_admin = "admin" in groups
+```
+
+Admin users have `is_admin: true` in their ID token.
+
+### Protected endpoints
+
+Admin-only endpoints check for admin status:
+
+```python
+@router.post("/api/admin/prompts")
+async def create_prompt(user = Depends(get_current_user)):
+    if not user.get("is_admin"):
+        raise HTTPException(status_code=403, detail="Admin access required")
+    # ... create prompt
+```
+
+## Token verification
+
+### Middleware verification
+
+All API requests are verified by authentication middleware:
+
+```python
+# From source code: backend/app/middleware/auth_middleware.py
+class AuthMiddleware:
+    def verify_token(self, credentials: HTTPAuthorizationCredentials):
+        token = credentials.credentials
+        
+        try:
+            # Decode and verify JWT
+            payload = jwt.decode(
+                token,
+                algorithms=["RS256"],
+                options={"verify_signature": False}  # Cognito handles signature
+            )
+            
+            # Extract user info
+            return {
+                "user_id": payload["sub"],
+                "email": payload.get("email"),
+                "name": payload.get("name"),
+                "is_admin": payload.get("custom:is_admin") == "true"
+            }
+        except jwt.ExpiredSignatureError:
+            raise HTTPException(status_code=401, detail="Token expired")
+        except jwt.InvalidTokenError:
+            raise HTTPException(status_code=401, detail="Invalid token")
+```
+
+### Client-side verification
+
+Clients should check token expiry before making requests:
+
+```typescript
+function isTokenExpired(token: string): boolean {
+  const payload = JSON.parse(atob(token.split('.')[1]))
+  const expiryTime = payload.exp * 1000 // Convert to milliseconds
+  return Date.now() >= expiryTime
+}
+
+if (isTokenExpired(accessToken)) {
+  // Refresh token
+  const response = await fetch('/api/auth/refresh', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ refresh_token: refreshToken })
+  })
+  const { access_token } = await response.json()
+  // Update stored token
+}
+```
+
+## Session management
+
+### Frontend implementation
+
+The frontend uses Zustand for auth state management:
+
+```typescript
+// From source code: frontend/src/shared/hooks/useAuth.ts
+interface AuthState {
+  user: User | null
+  accessToken: string | null
+  refreshToken: string | null
+  login: (email: string, password: string) => Promise<void>
+  logout: () => void
+  refreshAccessToken: () => Promise<void>
+}
+
+const useAuthStore = create<AuthState>((set, get) => ({
+  user: null,
+  accessToken: localStorage.getItem('accessToken'),
+  refreshToken: localStorage.getItem('refreshToken'),
+  
+  login: async (email, password) => {
+    const response = await authService.login(email, password)
+    localStorage.setItem('accessToken', response.access_token)
+    localStorage.setItem('refreshToken', response.refresh_token)
+    set({ user: response.user, accessToken: response.access_token })
+  },
+  
+  logout: () => {
+    localStorage.removeItem('accessToken')
+    localStorage.removeItem('refreshToken')
+    set({ user: null, accessToken: null, refreshToken: null })
+  },
+  
+  refreshAccessToken: async () => {
+    const { refreshToken } = get()
+    const response = await authService.refresh(refreshToken!)
+    localStorage.setItem('accessToken', response.access_token)
+    set({ accessToken: response.access_token })
+  }
+}))
+```
+
+### Auto-refresh
+
+Implement automatic token refresh before expiry:
+
+```typescript
+const setupTokenRefresh = (expiresIn: number) => {
+  // Refresh 5 minutes before expiry
+  const refreshTime = (expiresIn - 300) * 1000
+  
+  setTimeout(async () => {
+    await useAuthStore.getState().refreshAccessToken()
+  }, refreshTime)
+}
+```
+
+## Security best practices
+
+### Token storage
+
+✅ **Use httpOnly cookies** for production (not accessible via JavaScript)  
+✅ **Avoid localStorage** for sensitive tokens (vulnerable to XSS)  
+✅ **Use sessionStorage** if localStorage is required (cleared on tab close)  
+
+### Request security
+
+✅ **Always use HTTPS** for API requests  
+✅ **Include CSRF tokens** for state-changing operations  
+✅ **Validate tokens on server** - never trust client-side validation  
+
+### Logout
+
+✅ **Clear all tokens** from storage  
+✅ **Invalidate session** on server (optional, Cognito handles this)  
+✅ **Redirect to login** page  
+
+## Error handling
+
+### Common authentication errors
+
+| Status | Error | Solution |
+|--------|-------|----------|
+| 401 | Token expired | Refresh token or re-login |
+| 401 | Invalid token | Re-login |
+| 401 | Incorrect username or password | Check credentials |
+| 403 | Admin access required | User lacks admin privileges |
+| 404 | User not found | Check email or contact admin |
+| 429 | Too many requests | Rate limited, wait before retry |
+
+### Frontend error handling
+
+```typescript
+try {
+  await useAuthStore.getState().login(email, password)
+  router.push('/dashboard')
+} catch (error: any) {
+  if (error.response?.status === 401) {
+    showError('Invalid email or password')
+  } else if (error.response?.data?.challenge === 'NEW_PASSWORD_REQUIRED') {
+    router.push('/change-password', { session: error.response.data.session })
+  } else {
+    showError('Login failed. Please try again.')
+  }
+}
+```
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Login API" icon="right-to-bracket" href="/api/auth/login">
+    Complete login endpoint reference
+  </Card>
+  <Card title="Password reset API" icon="key" href="/api/auth/reset-password">
+    Password reset flow documentation
+  </Card>
+  <Card title="User management" icon="users" href="/api/admin/users">
+    Admin user management API
+  </Card>
+  <Card title="Frontend development" icon="browser" href="/development/frontend">
+    Frontend authentication implementation
+  </Card>
+</CardGroup>

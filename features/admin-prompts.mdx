@@ -1,0 +1,367 @@
+---
+title: Admin prompt manager
+description: Create, edit, and manage AI prompts used throughout the proposal workflow
+---
+
+The Admin Prompt Manager provides a centralized system for managing AI prompts that power the Alliance IGAD Innovation Hub's proposal generation workflow.
+
+## Overview
+
+Prompts are the instructions given to AWS Bedrock (Claude) for each step of the proposal workflow. The prompt manager allows administrators to:
+
+- Create and edit system and user prompts
+- Organize prompts by section, sub-section, and category
+- Publish prompts to make them active
+- Track version history and changes
+- Preview and test prompts before deployment
+
+## Prompt structure
+
+Each prompt consists of two components:
+
+### System prompt
+
+The system prompt sets the AI's role, expertise, and behavior:
+
+```markdown
+You are an expert proposal writer specializing in international development projects.
+You have deep knowledge of RFP requirements, evaluation criteria, and donor expectations.
+
+Your task is to analyze the provided RFP document and extract key information
+that will guide proposal development.
+```
+
+### User prompt template
+
+The user prompt template contains the specific instructions and context, with placeholders for dynamic data:
+
+```markdown
+Analyze the following RFP document:
+
+{{RFP_TEXT}}
+
+Extract the following information:
+1. **Requirements**: Technical, organizational, and eligibility requirements
+2. **Evaluation Criteria**: Scoring framework and weighting
+3. **Deliverables**: Expected outputs and milestones
+4. **Submission Guidelines**: Format, page limits, and deadlines
+
+Provide your analysis in JSON format.
+```
+
+## Prompt metadata
+
+Each prompt includes organizational metadata:
+
+| Field | Description | Example |
+|-------|-------------|---------|
+| `section` | Main feature area | `proposal_writer`, `newsletter_generator` |
+| `sub_section` | Workflow step | `step-1`, `step-2`, `rfp-analysis` |
+| `category` | Specific task | `RFP Analysis`, `Concept Generation` |
+| `categories` | List of applicable categories | `["RFP Analysis", "Requirements Extraction"]` |
+| `is_active` | Whether this prompt is currently used | `true` / `false` |
+| `version` | Version number | `1`, `2`, `3` |
+
+## Prompt organization
+
+### Sections and sub-sections
+
+Prompts are organized hierarchically:
+
+```
+proposal_writer/
+├── step-1/
+│   ├── RFP Analysis
+│   ├── Concept Analysis
+│   └── Requirements Extraction
+├── step-2/
+│   ├── Concept Generation
+│   └── Section Elaboration
+├── step-3/
+│   ├── Structure Generation
+│   └── Workplan Creation
+└── step-4/
+    ├── Draft Feedback
+    └── Quality Analysis
+```
+
+### Active prompt selection
+
+When the system needs a prompt, it queries DynamoDB:
+
+```python
+# From source code: backend/app/tools/proposal_writer/rfp_analysis/service.py
+filter_expr = (
+    Attr("is_active").eq(True)
+    & Attr("section").eq("proposal_writer")
+    & Attr("sub_section").eq("step-1")
+    & Attr("categories").contains("RFP Analysis")
+)
+
+response = table.scan(FilterExpression=filter_expr)
+prompt = response["Items"][0]  # Returns the active prompt
+```
+
+<Note>
+  Only ONE prompt per section/sub-section/category combination can be active at a time. Publishing a new prompt automatically deactivates the previous one.
+</Note>
+
+## Managing prompts
+
+### Create a new prompt
+
+```bash
+curl -X POST https://api.igad-hub.com/api/admin/prompts \
+  -H "Authorization: Bearer YOUR_ADMIN_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "title": "RFP Analysis - Enhanced Requirements Extraction",
+    "system_prompt": "You are an expert proposal writer...",
+    "user_prompt_template": "Analyze the following RFP...{{RFP_TEXT}}...",
+    "section": "proposal_writer",
+    "sub_section": "step-1",
+    "categories": ["RFP Analysis", "Requirements Extraction"],
+    "is_active": false,
+    "comments": "Added more detailed requirement extraction"
+  }'
+```
+
+Response:
+
+```json
+{
+  "prompt_id": "prompt#uuid-here",
+  "version": 1,
+  "created_at": "2024-01-15T10:00:00Z",
+  "created_by": "admin@igad-hub.com"
+}
+```
+
+### Update an existing prompt
+
+```bash
+curl -X PUT https://api.igad-hub.com/api/admin/prompts/{prompt_id} \
+  -H "Authorization: Bearer YOUR_ADMIN_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "user_prompt_template": "Updated template with {{NEW_VARIABLE}}...",
+    "comments": "Added support for new variable"
+  }'
+```
+
+Updates:
+- Increment version number
+- Update `updated_at` timestamp
+- Preserve change history in `comments`
+
+### Publish a prompt
+
+To make a prompt active:
+
+```bash
+curl -X PUT https://api.igad-hub.com/api/admin/prompts/{prompt_id} \
+  -H "Authorization: Bearer YOUR_ADMIN_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"is_active": true}'
+```
+
+The system automatically:
+1. Sets this prompt's `is_active` to `true`
+2. Finds any other prompts with matching section/sub_section/category
+3. Sets their `is_active` to `false`
+
+<Warning>
+  Publishing a prompt immediately affects production! Test prompts thoroughly before activating.
+</Warning>
+
+### List all prompts
+
+```bash
+curl -X GET https://api.igad-hub.com/api/admin/prompts \
+  -H "Authorization: Bearer YOUR_ADMIN_TOKEN"
+```
+
+Optional query parameters:
+- `section`: Filter by section (e.g., `proposal_writer`)
+- `sub_section`: Filter by sub-section (e.g., `step-1`)
+- `is_active`: Filter by active status (`true` / `false`)
+
+### Delete a prompt
+
+```bash
+curl -X DELETE https://api.igad-hub.com/api/admin/prompts/{prompt_id} \
+  -H "Authorization: Bearer YOUR_ADMIN_TOKEN"
+```
+
+<Warning>
+  Cannot delete an active prompt. Deactivate it first by publishing a different prompt.
+</Warning>
+
+## Placeholder formats
+
+### Supported formats
+
+The system supports TWO placeholder formats:
+
+1. **Double curly braces**: `{{VARIABLE_NAME}}`
+2. **Curly + square brackets**: `{[VARIABLE_NAME]}`
+
+Both formats are replaced during prompt execution:
+
+```python
+# From source code
+for key, value in context.items():
+    # Format 1: {{KEY}}
+    template = template.replace("{{" + key + "}}", str(value))
+    # Format 2: {[KEY]}
+    template = template.replace("{[" + key + "]}", str(value))
+```
+
+### Common placeholders
+
+| Placeholder | Description | Example |
+|-------------|-------------|---------|
+| `{{RFP_TEXT}}` | Full RFP document text | RFP content |
+| `{{CONCEPT_TEXT}}` | User's concept document | Concept content |
+| `{{RFP_ANALYSIS}}` | Structured RFP analysis result | JSON object |
+| `{{CONCEPT_ANALYSIS}}` | Concept analysis result | JSON object |
+| `{{SELECTED_SECTIONS}}` | User-selected sections for elaboration | Array |
+| `{{USER_COMMENTS}}` | User feedback on sections | Object |
+| `{{PROPOSAL_STRUCTURE}}` | Generated proposal structure | JSON object |
+| `{{DRAFT_CONTENT}}` | User's draft proposal text | Text content |
+
+## Version control
+
+### Version history
+
+Every prompt update increments the version:
+
+```json
+{
+  "prompt_id": "prompt#abc123",
+  "version": 3,
+  "created_at": "2024-01-10T10:00:00Z",
+  "updated_at": "2024-01-15T14:30:00Z",
+  "change_history": [
+    {
+      "version": 1,
+      "timestamp": "2024-01-10T10:00:00Z",
+      "user": "admin@igad-hub.com",
+      "comment": "Initial prompt"
+    },
+    {
+      "version": 2,
+      "timestamp": "2024-01-12T11:00:00Z",
+      "user": "admin@igad-hub.com",
+      "comment": "Improved requirement extraction"
+    },
+    {
+      "version": 3,
+      "timestamp": "2024-01-15T14:30:00Z",
+      "user": "editor@igad-hub.com",
+      "comment": "Added budget framework extraction"
+    }
+  ]
+}
+```
+
+### Rollback
+
+To rollback to a previous version:
+
+1. Copy the old prompt's content
+2. Create a new prompt with the old content
+3. Publish the new prompt to make it active
+
+## Testing prompts
+
+### Preview endpoint
+
+```bash
+curl -X POST https://api.igad-hub.com/api/admin/prompts/preview \
+  -H "Authorization: Bearer YOUR_ADMIN_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "prompt_id": "prompt#abc123",
+    "context": {
+      "RFP_TEXT": "Sample RFP content for testing...",
+      "CONCEPT_TEXT": "Sample concept..."
+    }
+  }'
+```
+
+Returns the compiled prompt with placeholders replaced:
+
+```json
+{
+  "system_prompt": "You are an expert proposal writer...",
+  "user_prompt": "Analyze the following RFP:\n\nSample RFP content for testing...\n\nExtract..."
+}
+```
+
+### Test with Bedrock
+
+For thorough testing, administrators can:
+
+1. Create a test proposal
+2. Upload test documents
+3. Temporarily publish the new prompt
+4. Trigger the workflow step
+5. Review the AI output
+6. Publish the production prompt if satisfied
+
+## Best practices
+
+### Prompt design
+
+✅ **Be specific**: Clearly define the task and expected output format  
+✅ **Use examples**: Include sample outputs in the prompt  
+✅ **Set constraints**: Specify word limits, formatting requirements  
+✅ **Request JSON**: For structured data, always request JSON output  
+✅ **Include context**: Provide relevant background and objectives  
+
+### Version management
+
+✅ **Test before publishing**: Always test in a non-production environment  
+✅ **Document changes**: Use the `comments` field to explain modifications  
+✅ **Incremental updates**: Make small, focused changes to isolate issues  
+✅ **Monitor impact**: Track proposal quality metrics after prompt changes  
+
+### Security
+
+✅ **Restrict access**: Only grant admin privileges to trusted users  
+✅ **Audit changes**: Review `change_history` regularly  
+✅ **Backup prompts**: Export active prompts periodically  
+
+## Authentication
+
+All admin prompt endpoints require:
+
+1. **JWT Bearer token** with admin privileges
+2. **`is_admin: true`** claim in the token
+
+Users without admin privileges receive:
+
+```json
+{
+  "detail": "Admin access required",
+  "status_code": 403
+}
+```
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Admin API reference" icon="code" href="/api/admin/prompts">
+    Complete API documentation for prompt management
+  </Card>
+  <Card title="Proposal workflow" icon="list-check" href="/features/proposal-writer">
+    See how prompts are used in the workflow
+  </Card>
+  <Card title="Bedrock integration" icon="brain" href="/architecture#ai-integration">
+    Learn about AWS Bedrock and Claude integration
+  </Card>
+  <Card title="User management" icon="users" href="/api/admin/users">
+    Manage admin users and permissions
+  </Card>
+</CardGroup>

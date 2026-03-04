@@ -1,0 +1,617 @@
+---
+title: 'User Management'
+description: 'Admin API endpoints for managing user accounts and permissions'
+---
+
+## Overview
+
+The User Management API provides comprehensive endpoints for managing user accounts, authentication, and access control within the Alliance IGAD Innovation Hub platform.
+
+**Base URL:** `/api/admin/users`
+
+**Authentication:** All endpoints require admin authentication via JWT Bearer token with `is_admin: true` privileges.
+
+<Note>
+  User management is handled through AWS Cognito. All operations interact with the Cognito User Pool configured for your environment.
+</Note>
+
+## Authentication Requirements
+
+All user management endpoints require:
+
+```http
+Authorization: Bearer <jwt_token>
+```
+
+The JWT token must contain:
+- Valid signature
+- `is_admin: true` claim
+- Active user status
+
+**Error Responses:**
+
+```json
+// 401 Unauthorized - Invalid token
+{
+  "detail": "Invalid authentication credentials"
+}
+
+// 403 Forbidden - Not an admin
+{
+  "detail": "Admin access required"
+}
+```
+
+## User Schema
+
+Users follow the AWS Cognito schema with custom attributes:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `username` | string | Unique user identifier (email address) |
+| `email` | string | User's email address |
+| `email_verified` | boolean | Whether email has been verified |
+| `status` | string | User account status (see Status Values below) |
+| `enabled` | boolean | Whether account is enabled |
+| `created_at` | datetime | Account creation timestamp (ISO 8601) |
+| `updated_at` | datetime | Last update timestamp (ISO 8601) |
+| `attributes` | object | User attributes (name, phone, custom fields) |
+| `groups` | string[] | List of groups user belongs to |
+
+### User Status Values
+
+| Status | Description |
+|--------|-------------|
+| `CONFIRMED` | User has verified email and set password |
+| `FORCE_CHANGE_PASSWORD` | User must change password on next login |
+| `RESET_REQUIRED` | Admin has reset the password |
+| `UNCONFIRMED` | User has not verified email |
+| `DISABLED` | User account is disabled |
+| `ARCHIVED` | User account is archived (soft delete) |
+
+## Endpoints
+
+### List Users
+
+```http
+GET /api/admin/users
+```
+
+Retrieve a list of all users in the system.
+
+**Query Parameters:**
+
+Currently no filtering parameters are supported. Future versions may include:
+- `status` - Filter by user status
+- `group` - Filter by group membership
+- `search` - Search by email or name
+- `limit` - Results per page
+- `offset` - Pagination offset
+
+**Response:** `200 OK`
+
+```json
+{
+  "users": [
+    {
+      "username": "john.doe@igad.org",
+      "email": "john.doe@igad.org",
+      "email_verified": true,
+      "status": "CONFIRMED",
+      "enabled": true,
+      "created_at": "2024-01-15T10:30:00Z",
+      "updated_at": "2024-01-15T10:30:00Z",
+      "attributes": {
+        "email": "john.doe@igad.org",
+        "email_verified": "true",
+        "name": "John Doe",
+        "phone_number": "+254700000000"
+      }
+    },
+    {
+      "username": "jane.smith@igad.org",
+      "email": "jane.smith@igad.org",
+      "email_verified": true,
+      "status": "CONFIRMED",
+      "enabled": true,
+      "created_at": "2024-01-16T09:20:00Z",
+      "updated_at": "2024-01-20T14:15:00Z",
+      "attributes": {
+        "email": "jane.smith@igad.org",
+        "email_verified": "true",
+        "name": "Jane Smith"
+      }
+    }
+  ],
+  "total": 2
+}
+```
+
+### Get User
+
+```http
+GET /api/admin/users/{username}
+```
+
+Get detailed information about a specific user.
+
+**Path Parameters:**
+
+- `username` (string, required) - User's email address
+
+**Response:** `200 OK`
+
+```json
+{
+  "username": "john.doe@igad.org",
+  "email": "john.doe@igad.org",
+  "email_verified": true,
+  "status": "CONFIRMED",
+  "enabled": true,
+  "created_at": "2024-01-15T10:30:00Z",
+  "updated_at": "2024-01-20T14:15:00Z",
+  "attributes": {
+    "email": "john.doe@igad.org",
+    "email_verified": "true",
+    "name": "John Doe",
+    "phone_number": "+254700000000",
+    "custom:department": "Research",
+    "custom:role": "Analyst"
+  },
+  "groups": ["users", "researchers"],
+  "last_login": "2024-01-20T08:30:00Z"
+}
+```
+
+**Error Responses:**
+
+- `404 Not Found` - User does not exist
+- `500 Internal Server Error` - Failed to retrieve user details
+
+### Create User
+
+```http
+POST /api/admin/users
+```
+
+Create a new user account in the system.
+
+**Request Body:**
+
+```json
+{
+  "username": "newuser@igad.org",
+  "email": "newuser@igad.org",
+  "temporary_password": "TempPass123!",
+  "send_email": true
+}
+```
+
+**Fields:**
+
+| Field | Type | Required | Default | Description |
+|-------|------|----------|---------|-------------|
+| `username` | string | Yes | - | User identifier (email format) |
+| `email` | string | Yes | - | User's email address |
+| `temporary_password` | string | Yes | - | Initial password (min 8 chars, uppercase, lowercase, number, symbol) |
+| `send_email` | boolean | No | `true` | Send welcome email with credentials |
+
+**Response:** `200 OK`
+
+```json
+{
+  "success": true,
+  "message": "User created successfully",
+  "user": {
+    "username": "newuser@igad.org",
+    "email": "newuser@igad.org",
+    "status": "FORCE_CHANGE_PASSWORD"
+  }
+}
+```
+
+**Error Responses:**
+
+```json
+// 400 Bad Request - User already exists
+{
+  "success": false,
+  "error": "UserExistsException",
+  "message": "User already exists"
+}
+
+// 400 Bad Request - Invalid password
+{
+  "detail": "Password does not meet requirements"
+}
+
+// 500 Internal Server Error
+{
+  "detail": "Failed to create user: [error details]"
+}
+```
+
+**Behavior:**
+
+1. Email addresses are automatically normalized to lowercase
+2. Email is automatically marked as verified (`email_verified: true`)
+3. User status is set to `FORCE_CHANGE_PASSWORD`
+4. If `send_email: true`, Cognito sends a welcome email using custom templates
+5. If `send_email: false`, credentials must be shared manually
+
+**Password Requirements:**
+
+- Minimum 8 characters
+- At least one uppercase letter
+- At least one lowercase letter
+- At least one number
+- At least one special character (!@#$%^&*)
+
+### Update User
+
+```http
+PUT /api/admin/users/{username}
+```
+
+Update user attributes and settings.
+
+**Path Parameters:**
+
+- `username` (string, required) - User's email address
+
+**Request Body:**
+
+```json
+{
+  "email": "updated.email@igad.org",
+  "attributes": {
+    "name": "John Doe Updated",
+    "phone_number": "+254711111111",
+    "custom:department": "Policy Analysis",
+    "custom:role": "Senior Analyst"
+  }
+}
+```
+
+**Fields:**
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `email` | string | No | New email address |
+| `attributes` | object | No | User attributes to update |
+
+**Standard Attributes:**
+
+- `name` - Full name
+- `phone_number` - Phone number (E.164 format: +[country][number])
+- `picture` - Profile picture URL
+- `locale` - User locale (e.g., "en-US")
+
+**Custom Attributes:**
+
+- `custom:department` - Department name
+- `custom:role` - Job role/title
+- `custom:organization` - Organization name
+- Any other custom attributes defined in Cognito
+
+**Response:** `200 OK`
+
+```json
+{
+  "success": true,
+  "message": "User updated successfully",
+  "user": {
+    "username": "john.doe@igad.org",
+    "attributes": {
+      "email": "updated.email@igad.org",
+      "name": "John Doe Updated",
+      "phone_number": "+254711111111",
+      "custom:department": "Policy Analysis",
+      "custom:role": "Senior Analyst"
+    }
+  }
+}
+```
+
+**Error Responses:**
+
+- `404 Not Found` - User does not exist
+- `400 Bad Request` - Invalid attribute values
+- `500 Internal Server Error` - Update failed
+
+### Delete User
+
+```http
+DELETE /api/admin/users/{username}
+```
+
+Permanently delete a user account and all associated data.
+
+**Path Parameters:**
+
+- `username` (string, required) - User's email address
+
+**Response:** `200 OK`
+
+```json
+{
+  "success": true,
+  "message": "User deleted successfully"
+}
+```
+
+**Error Responses:**
+
+- `404 Not Found` - User does not exist
+- `500 Internal Server Error` - Deletion failed
+
+<Warning>
+  This operation is **permanent and irreversible**. All user data will be removed from Cognito. Consider using "Disable User" for temporary access revocation.
+</Warning>
+
+**Best Practice:** Use the disable endpoint for temporary access revocation and only delete users when:
+- Required for compliance (e.g., GDPR right to be forgotten)
+- Account was created in error
+- User has explicitly requested account deletion
+
+### Enable User
+
+```http
+POST /api/admin/users/{username}/enable
+```
+
+Enable a disabled user account, restoring login access.
+
+**Path Parameters:**
+
+- `username` (string, required) - User's email address
+
+**Response:** `200 OK`
+
+```json
+{
+  "success": true,
+  "message": "User enabled successfully"
+}
+```
+
+**Effect:**
+- User can log in again
+- All data and permissions are restored
+- User does not need to reset password (unless status is `FORCE_CHANGE_PASSWORD`)
+
+### Disable User
+
+```http
+POST /api/admin/users/{username}/disable
+```
+
+Disable a user account, preventing login while preserving all data.
+
+**Path Parameters:**
+
+- `username` (string, required) - User's email address
+
+**Response:** `200 OK`
+
+```json
+{
+  "success": true,
+  "message": "User disabled successfully"
+}
+```
+
+**Effect:**
+- User cannot log in
+- Active sessions remain valid until token expiration
+- All data is preserved
+- Can be re-enabled at any time
+
+**Use Cases:**
+- Temporary suspension
+- Security investigation
+- Account under review
+- Employee on leave
+
+### Reset User Password
+
+```http
+POST /api/admin/users/{username}/reset-password
+```
+
+Administratively reset a user's password and send reset instructions.
+
+**Path Parameters:**
+
+- `username` (string, required) - User's email address
+
+**Response:** `200 OK`
+
+```json
+{
+  "success": true,
+  "message": "Password reset email sent",
+  "reset_sent_to": "john.doe@igad.org"
+}
+```
+
+**Behavior:**
+
+1. User's current password is invalidated
+2. User status is set to `RESET_REQUIRED`
+3. Cognito sends a password reset email with a temporary code
+4. User must use the code to set a new password
+5. Reset codes expire after 24 hours
+
+**Error Responses:**
+
+- `404 Not Found` - User does not exist
+- `400 Bad Request` - User is not confirmed
+- `500 Internal Server Error` - Reset failed
+
+## Group Management
+
+Groups provide role-based access control (RBAC) for users.
+
+### Add User to Group
+
+```http
+POST /api/admin/users/{username}/groups/{group_name}
+```
+
+Add a user to a group, granting associated permissions.
+
+**Path Parameters:**
+
+- `username` (string, required) - User's email address
+- `group_name` (string, required) - Group name (e.g., "admins", "researchers")
+
+**Response:** `200 OK`
+
+```json
+{
+  "success": true,
+  "message": "User added to group successfully",
+  "user": "john.doe@igad.org",
+  "group": "admins"
+}
+```
+
+**Common Groups:**
+
+- `admins` - Administrator privileges (full system access)
+- `users` - Standard user privileges (default)
+- `researchers` - Research-specific features
+- `analysts` - Analysis tools access
+
+**Error Responses:**
+
+- `404 Not Found` - User or group does not exist
+- `400 Bad Request` - User already in group
+- `500 Internal Server Error` - Operation failed
+
+### Remove User from Group
+
+```http
+DELETE /api/admin/users/{username}/groups/{group_name}
+```
+
+Remove a user from a group, revoking associated permissions.
+
+**Path Parameters:**
+
+- `username` (string, required) - User's email address
+- `group_name` (string, required) - Group name
+
+**Response:** `200 OK`
+
+```json
+{
+  "success": true,
+  "message": "User removed from group successfully",
+  "user": "john.doe@igad.org",
+  "group": "admins"
+}
+```
+
+**Error Responses:**
+
+- `404 Not Found` - User or group does not exist
+- `400 Bad Request` - User not in group
+- `500 Internal Server Error` - Operation failed
+
+## Email Notifications
+
+### Welcome Email (New User)
+
+Sent when `send_email: true` during user creation:
+
+- Subject: "Welcome to Alliance IGAD Innovation Hub"
+- Contains: Username, temporary password, login link
+- Template: Configurable in Cognito
+
+### Password Reset Email
+
+Sent when admin resets password:
+
+- Subject: "Password Reset Request"
+- Contains: Verification code, reset link
+- Template: Configurable in Cognito
+- Expires: 24 hours
+
+## Best Practices
+
+### User Creation
+
+1. **Email as Username:** Always use email addresses as usernames for consistency
+2. **Strong Temporary Passwords:** Generate passwords meeting all requirements
+3. **Email Notifications:**
+   - Enable for individual user creation
+   - Disable for bulk imports (send separate notifications)
+4. **Group Assignment:** Add users to appropriate groups immediately after creation
+
+### Password Management
+
+1. **Use Reset Endpoint:** Don't manually share passwords; use the reset endpoint
+2. **Communicate Requirements:** Inform users of password requirements before creation
+3. **First Login:** Ensure users know they must change password on first login
+4. **Security:** Temporary passwords should be unique and complex
+
+### Account Lifecycle
+
+1. **Disable vs Delete:**
+   - Disable: Temporary revocation, investigation, leave
+   - Delete: Compliance, permanent removal
+2. **Audit Trail:** Maintain logs of account changes
+3. **Regular Reviews:** Periodically review active accounts and permissions
+4. **Offboarding:** Use disable immediately, delete after retention period
+
+### Security
+
+1. **Admin Access:** Strictly control who has admin privileges
+2. **Group Memberships:** Follow principle of least privilege
+3. **Monitor Activity:** Track failed logins and suspicious activity
+4. **Token Management:** Ensure admin tokens are securely stored
+5. **Regular Audits:** Review user list, groups, and permissions quarterly
+
+## Error Handling
+
+All endpoints return consistent error responses:
+
+```json
+{
+  "detail": "Error description"
+}
+```
+
+**HTTP Status Codes:**
+
+- `200 OK` - Request successful
+- `201 Created` - User created
+- `400 Bad Request` - Validation error, user exists, invalid input
+- `401 Unauthorized` - Missing or invalid token
+- `403 Forbidden` - Not an admin
+- `404 Not Found` - User or resource not found
+- `429 Too Many Requests` - Rate limit exceeded
+- `500 Internal Server Error` - Server error
+
+## Rate Limits
+
+AWS Cognito enforces the following limits:
+
+- **User operations:** 10 requests/second per account
+- **Authentication:** 120 requests/second per account
+- **Burst:** 20 requests for user operations
+
+If limits are exceeded:
+
+```json
+{
+  "detail": "Too many requests. Please try again later."
+}
+```
+
+**Recommendations:**
+- Implement exponential backoff for retries
+- Batch operations when possible
+- Contact AWS Support to increase limits if needed

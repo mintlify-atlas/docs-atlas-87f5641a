@@ -1,0 +1,623 @@
+---
+title: "Production Deployment"
+description: "Deploy the IGAD Innovation Hub to production with safety checks and verification"
+---
+
+<Warning>
+  Production deployment requires manual confirmation and affects the live system. Always deploy to testing first and verify functionality.
+</Warning>
+
+## Prerequisites
+
+Before deploying to production:
+
+<Check>Deploy to testing environment and verify all functionality</Check>
+<Check>Run full test suite and ensure all tests pass</Check>
+<Check>Review CloudWatch logs for errors in testing</Check>
+<Check>Obtain approval from stakeholders</Check>
+<Check>Notify users of planned maintenance (if applicable)</Check>
+<Check>Back up critical data if needed</Check>
+
+## Pre-deployment Checklist
+
+### Code Quality
+
+```bash
+cd igad-app/backend
+make all-checks  # Format, lint, type-check, test
+
+cd ../frontend
+npm run lint
+npm run type-check
+npm run test
+```
+
+### Testing Environment Validation
+
+```bash
+# Verify testing deployment is working
+curl https://<testing-api>.execute-api.us-east-1.amazonaws.com/prod/api/health
+
+# Check CloudWatch logs for errors
+aws logs tail /aws/lambda/igad-backend-testing-ApiFunction \
+  --since 1h \
+  --profile IBD-DEV
+```
+
+### Configuration Review
+
+Verify production configuration in `config/production.json`:
+
+```json
+{
+  "environment": "production",
+  "lambda": {
+    "memorySize": 256,
+    "timeout": 30
+  },
+  "dynamodb": {
+    "billingMode": "ON_DEMAND",
+    "pointInTimeRecovery": true
+  },
+  "cognito": {
+    "passwordPolicy": {
+      "minLength": 12,
+      "requireLowercase": true,
+      "requireUppercase": true,
+      "requireDigits": true,
+      "requireSymbols": true
+    },
+    "mfaConfiguration": "OPTIONAL"
+  },
+  "s3": {
+    "versioning": true,
+    "encryption": "S3_MANAGED"
+  },
+  "cloudwatch": {
+    "logRetention": 30
+  }
+}
+```
+
+## Production Deployment Scripts
+
+### Full Stack Production Deployment
+
+**Script**: `deploy-fullstack-production.sh`
+
+Deploys both frontend and backend to production with safety checks.
+
+```bash
+cd igad-app
+./scripts/deploy-fullstack-production.sh
+```
+
+See `scripts/deploy-fullstack-production.sh:1`
+
+### Deployment Process
+
+#### Step 1: Safety Confirmation
+
+```bash
+🚀 IGAD Innovation Hub - Fullstack Production Deployment
+=======================================================
+
+✅ AWS profile and region validated
+   Profile: IBD-DEV
+   Region: us-east-1
+
+⚠️  PRODUCTION DEPLOYMENT WARNING ⚠️
+This will deploy to PRODUCTION environment.
+Ensure all testing has been completed.
+
+Are you sure you want to proceed? (yes/no):
+```
+
+**Type `yes` to continue, or anything else to cancel.**
+
+#### Step 2: Automated Testing
+
+```bash
+🧪 Running tests...
+pytest backend/tests/ -v --tb=short
+```
+
+<Note>
+  The deployment will abort if any tests fail. Fix failing tests before retrying.
+</Note>
+
+#### Step 3: Frontend Build (Production Mode)
+
+```bash
+🔨 Building frontend for production...
+npm --prefix frontend install
+npm --prefix frontend run build
+```
+
+Production build settings:
+- Minification enabled
+- Source maps generated
+- Environment variables from `.env.production`
+
+#### Step 4: Backend Build
+
+```bash
+🔨 Building backend...
+rm -rf backend/dist
+mkdir -p backend/dist
+cp -r backend/app backend/dist/
+cp backend/requirements.txt backend/dist/
+cp backend/bootstrap backend/dist/
+cp backend/.env backend/dist/
+pip3 install -r backend/requirements.txt -t backend/dist/
+```
+
+#### Step 5: SAM Deployment
+
+```bash
+🚀 Deploying to production...
+sam build --use-container
+sam deploy --config-env production
+```
+
+Uses production configuration from `samconfig.toml` (if defined) or defaults to:
+
+```toml
+[production]
+[production.deploy]
+[production.deploy.parameters]
+stack_name = "igad-backend-production"
+resolve_s3 = true
+confirm_changeset = false
+capabilities = "CAPABILITY_IAM"
+region = "us-east-1"
+```
+
+#### Step 6: Resource Discovery
+
+```bash
+🔍 Finding S3 bucket for production environment...
+📤 S3 Bucket: igad-production-websitebucket-xyz789
+
+🔍 Finding CloudFront distribution for S3 bucket...
+📤 CloudFront Distribution ID: E0987654321XYZ
+```
+
+Dynamically discovers production resources from CloudFormation stack.
+
+#### Step 7: Frontend Upload
+
+```bash
+📤 Uploading frontend to S3...
+aws s3 sync frontend/dist/ s3://${BUCKET_NAME} --delete
+```
+
+`--delete` flag removes old files not in the new build.
+
+#### Step 8: CloudFront Invalidation
+
+```bash
+🔄 Invalidating CloudFront cache...
+aws cloudfront create-invalidation \
+  --distribution-id E0987654321XYZ \
+  --paths "/*"
+
+✅ CloudFront invalidation created: I0987654321XYZ
+```
+
+#### Step 9: Deployment Summary
+
+```bash
+🎉 Production deployment completed successfully!
+
+✅ Production deployment ready!
+📋 Production Resources:
+   - Frontend: CloudFront Distribution
+   - Backend: Lambda + API Gateway
+   - Database: DynamoDB (production table)
+   - Auth: Cognito (production pool)
+
+🔍 Post-deployment checklist:
+   □ Verify all endpoints respond
+   □ Test authentication flow
+   □ Check CloudWatch logs
+   □ Monitor error rates
+   □ Update DNS if using custom domain
+```
+
+### Legacy Production Deployment
+
+**Script**: `deploy-production.sh` (older version)
+
+```bash
+./scripts/deploy-production.sh
+```
+
+See `scripts/deploy-production.sh:1`
+
+**Differences:**
+- No automated testing
+- Backend-only deployment
+- Manual frontend deployment
+
+**Usage:**
+
+```bash
+cd igad-app
+
+# Copy source to dist
+cp -r backend/app/* backend/dist/
+
+# Build and deploy
+sam build --use-container
+sam deploy --config-env production
+
+# Get CloudFront ID from stack outputs
+DISTRIBUTION_ID=$(aws cloudformation describe-stacks \
+  --stack-name igad-backend-production \
+  --query 'Stacks[0].Outputs[?OutputKey==`CloudFrontDistributionId`].OutputValue' \
+  --output text)
+
+# Upload frontend
+aws s3 sync frontend/dist/ s3://${BUCKET_NAME} --delete
+
+# Invalidate cache
+aws cloudfront create-invalidation \
+  --distribution-id $DISTRIBUTION_ID \
+  --paths "/*"
+```
+
+## Post-Deployment Verification
+
+### Verify CloudFormation Stack
+
+```bash
+aws cloudformation describe-stacks \
+  --stack-name igad-backend-production \
+  --profile IBD-DEV
+```
+
+**Check for:**
+- Stack status: `CREATE_COMPLETE` or `UPDATE_COMPLETE`
+- No failed resources
+- All outputs present
+
+### Health Check Endpoints
+
+#### API Health
+
+```bash
+curl https://<production-api>.execute-api.us-east-1.amazonaws.com/prod/api/health
+```
+
+**Expected response:**
+
+```json
+{
+  "status": "healthy",
+  "environment": "production",
+  "timestamp": "2026-03-04T12:00:00Z"
+}
+```
+
+#### Vector Storage Health
+
+```bash
+curl -X POST https://<production-api>.execute-api.us-east-1.amazonaws.com/prod/api/vectors/health \
+  -H "Authorization: Bearer <token>"
+```
+
+**Expected response:**
+
+```json
+{
+  "status": "operational",
+  "bucket": "igad-proposals-vectors-production",
+  "indexes": [
+    "reference-proposals-index",
+    "existing-work-index"
+  ]
+}
+```
+
+### Test Critical User Flows
+
+<Steps>
+  <Step title="Authentication">
+    Test user login, password reset, and token refresh
+  </Step>
+  <Step title="Proposal Creation">
+    Create a test proposal and verify database writes
+  </Step>
+  <Step title="Document Upload">
+    Upload a document and verify S3 storage
+  </Step>
+  <Step title="AI Generation">
+    Trigger AI analysis and verify Bedrock integration
+  </Step>
+  <Step title="Document Download">
+    Download a generated document and verify S3 retrieval
+  </Step>
+</Steps>
+
+### Monitor CloudWatch Logs
+
+#### Lambda Function Logs
+
+```bash
+# Main API function
+aws logs tail /aws/lambda/igad-backend-production-ApiFunction \
+  --follow \
+  --profile IBD-DEV
+
+# Worker function
+aws logs tail /aws/lambda/igad-backend-production-AnalysisWorkerFunction \
+  --follow \
+  --profile IBD-DEV
+```
+
+#### Search for Errors
+
+```bash
+aws logs filter-log-events \
+  --log-group-name /aws/lambda/igad-backend-production-ApiFunction \
+  --filter-pattern "ERROR" \
+  --start-time $(date -u -d '1 hour ago' +%s)000 \
+  --profile IBD-DEV
+```
+
+### Check CloudWatch Metrics
+
+```bash
+# Lambda invocations
+aws cloudwatch get-metric-statistics \
+  --namespace AWS/Lambda \
+  --metric-name Invocations \
+  --dimensions Name=FunctionName,Value=igad-backend-production-ApiFunction \
+  --start-time $(date -u -d '1 hour ago' +%Y-%m-%dT%H:%M:%S) \
+  --end-time $(date -u +%Y-%m-%dT%H:%M:%S) \
+  --period 300 \
+  --statistics Sum \
+  --profile IBD-DEV
+
+# Lambda errors
+aws cloudwatch get-metric-statistics \
+  --namespace AWS/Lambda \
+  --metric-name Errors \
+  --dimensions Name=FunctionName,Value=igad-backend-production-ApiFunction \
+  --start-time $(date -u -d '1 hour ago' +%Y-%m-%dT%H:%M:%S) \
+  --end-time $(date -u +%Y-%m-%dT%H:%M:%S) \
+  --period 300 \
+  --statistics Sum \
+  --profile IBD-DEV
+```
+
+## Rollback Procedures
+
+### CloudFormation Stack Rollback
+
+If deployment fails, CloudFormation automatically rolls back. To manually rollback:
+
+```bash
+# Get previous stack version
+aws cloudformation describe-stacks \
+  --stack-name igad-backend-production \
+  --profile IBD-DEV \
+  --query 'Stacks[0].PreviousStackPolicy'
+
+# Rollback to previous version
+aws cloudformation rollback-stack \
+  --stack-name igad-backend-production \
+  --profile IBD-DEV
+```
+
+### Frontend Rollback
+
+S3 versioning is enabled in production. To restore previous frontend:
+
+```bash
+# List object versions
+aws s3api list-object-versions \
+  --bucket igad-production-websitebucket-xyz789 \
+  --prefix index.html \
+  --profile IBD-DEV
+
+# Copy previous version
+aws s3api copy-object \
+  --bucket igad-production-websitebucket-xyz789 \
+  --copy-source igad-production-websitebucket-xyz789/index.html?versionId=<version-id> \
+  --key index.html \
+  --profile IBD-DEV
+
+# Invalidate CloudFront
+aws cloudfront create-invalidation \
+  --distribution-id E0987654321XYZ \
+  --paths "/index.html" \
+  --profile IBD-DEV
+```
+
+### Lambda Function Rollback
+
+Revert to a previous Lambda version:
+
+```bash
+# List function versions
+aws lambda list-versions-by-function \
+  --function-name igad-backend-production-ApiFunction \
+  --profile IBD-DEV
+
+# Update alias to previous version
+aws lambda update-alias \
+  --function-name igad-backend-production-ApiFunction \
+  --name production \
+  --function-version <previous-version> \
+  --profile IBD-DEV
+```
+
+## Production-Specific Configuration
+
+### Environment Variables
+
+Production Lambda functions use these environment variables:
+
+```yaml
+Environment:
+  Variables:
+    PORT: 8080
+    AWS_LAMBDA_EXEC_WRAPPER: /opt/bootstrap
+    ENVIRONMENT: production
+    TABLE_NAME: igad-prod-main-table
+    PROPOSALS_BUCKET: !Ref ProposalDocumentsBucket
+    COGNITO_CLIENT_ID: <production-client-id>
+    COGNITO_USER_POOL_ID: <production-pool-id>
+    CORS_ALLOWED_ORIGINS: https://igad-innovation-hub.com,https://www.igad-innovation-hub.com
+```
+
+### Cognito Production Settings
+
+Production uses stricter security:
+
+- **Password Policy**: Minimum 12 characters, requires symbols
+- **MFA**: Optional (users can enable)
+- **Email Delivery**: Cognito default or SES custom sender
+- **Token Validity**: Shorter refresh token lifetime
+
+Configure email templates:
+
+```bash
+python3 backend/scripts/deployment/deploy_production_emails.py
+```
+
+See `backend/scripts/deployment/README_EMAIL_DEPLOYMENT.md:1`
+
+### DynamoDB Production Settings
+
+- **Billing Mode**: On-demand (auto-scaling)
+- **Point-in-Time Recovery**: Enabled
+- **Encryption**: AWS managed keys
+- **Backup**: Daily automated backups (30-day retention)
+
+## Monitoring and Alerts
+
+### CloudWatch Alarms
+
+Set up alarms for production monitoring:
+
+```bash
+# Lambda error rate alarm
+aws cloudwatch put-metric-alarm \
+  --alarm-name igad-production-lambda-errors \
+  --alarm-description "Alert on Lambda errors" \
+  --metric-name Errors \
+  --namespace AWS/Lambda \
+  --statistic Sum \
+  --period 300 \
+  --threshold 5 \
+  --comparison-operator GreaterThanThreshold \
+  --evaluation-periods 1 \
+  --dimensions Name=FunctionName,Value=igad-backend-production-ApiFunction \
+  --profile IBD-DEV
+
+# API Gateway 5xx errors
+aws cloudwatch put-metric-alarm \
+  --alarm-name igad-production-api-5xx \
+  --alarm-description "Alert on API Gateway 5xx errors" \
+  --metric-name 5XXError \
+  --namespace AWS/ApiGateway \
+  --statistic Sum \
+  --period 300 \
+  --threshold 10 \
+  --comparison-operator GreaterThanThreshold \
+  --evaluation-periods 1 \
+  --profile IBD-DEV
+```
+
+### Log Insights Queries
+
+**Most common errors:**
+
+```sql
+fields @timestamp, @message
+| filter @message like /ERROR/
+| stats count() by @message
+| sort count desc
+| limit 10
+```
+
+**Slowest API requests:**
+
+```sql
+fields @timestamp, @duration, @message
+| filter @type = "REPORT"
+| sort @duration desc
+| limit 20
+```
+
+## Troubleshooting Production Issues
+
+### High Lambda Duration
+
+**Symptom**: Requests timing out
+
+**Investigation:**
+
+```bash
+# Check average duration
+aws cloudwatch get-metric-statistics \
+  --namespace AWS/Lambda \
+  --metric-name Duration \
+  --dimensions Name=FunctionName,Value=igad-backend-production-ApiFunction \
+  --start-time $(date -u -d '1 hour ago' +%Y-%m-%dT%H:%M:%S) \
+  --end-time $(date -u +%Y-%m-%dT%H:%M:%S) \
+  --period 300 \
+  --statistics Average,Maximum \
+  --profile IBD-DEV
+```
+
+**Solutions:**
+- Increase Lambda memory in `template.yaml:28` (memory affects CPU)
+- Optimize database queries (use indexes)
+- Enable Lambda provisioned concurrency for warm starts
+
+### DynamoDB Throttling
+
+**Symptom**: `ProvisionedThroughputExceededException`
+
+**Solution**: DynamoDB is on-demand, but check for hot partitions:
+
+```bash
+aws dynamodb describe-table \
+  --table-name igad-prod-main-table \
+  --profile IBD-DEV
+```
+
+Review partition key design if consistent throttling occurs.
+
+### Cognito Authentication Failures
+
+**Symptom**: Users cannot log in
+
+**Investigation:**
+
+```bash
+# Check Cognito logs (if enabled)
+aws cognito-idp admin-list-user-auth-events \
+  --user-pool-id <production-pool-id> \
+  --username user@example.com \
+  --profile IBD-DEV
+```
+
+**Common causes:**
+- Incorrect COGNITO_CLIENT_ID or COGNITO_USER_POOL_ID
+- CORS issues (check allowed origins)
+- Token expiration (check token validity settings)
+
+## Next Steps
+
+<Card title="Environment Configuration" icon="gear" href="/deployment/environment-config">
+  Configure environment variables and AWS resources
+</Card>
+
+<Card title="Deployment Overview" icon="book" href="/deployment/overview">
+  Review deployment architecture and AWS services
+</Card>

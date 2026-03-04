@@ -1,0 +1,835 @@
+---
+title: "Environment Configuration"
+description: "Configure environment variables, AWS resources, Cognito, DynamoDB, and S3 for IGAD Innovation Hub"
+---
+
+## Overview
+
+The IGAD Innovation Hub uses environment variables and AWS resource configurations to manage different deployment environments. This page documents all configuration options and AWS resource setup.
+
+## Environment Variables
+
+Environment variables are defined in the SAM `template.yaml` and can be overridden locally for development.
+
+### Lambda Function Environment Variables
+
+Defined in `template.yaml:32-44` for the main API function:
+
+```yaml
+Environment:
+  Variables:
+    PORT: 8080
+    AWS_LAMBDA_EXEC_WRAPPER: /opt/bootstrap
+    COGNITO_CLIENT_ID: 7p11hp6gcklhctcr9qffne71vl
+    COGNITO_USER_POOL_ID: us-east-1_IMi3kSuB8
+    TABLE_NAME: igad-testing-main-table
+    PROPOSALS_BUCKET: !Ref ProposalDocumentsBucket
+    AWS_STACK_NAME: !Ref AWS::StackName
+    WORKER_FUNCTION_NAME: !Ref AnalysisWorkerFunction
+    ENVIRONMENT: testing
+    CORS_ALLOWED_ORIGINS: https://igad-innovation-hub.com,https://www.igad-innovation-hub.com,https://test-igad-hub.alliance.cgiar.org
+```
+
+### Environment Variable Reference
+
+| Variable | Description | Example Value | Required |
+|----------|-------------|---------------|----------|
+| `PORT` | Lambda Web Adapter port | `8080` | Yes |
+| `AWS_LAMBDA_EXEC_WRAPPER` | Lambda Web Adapter wrapper | `/opt/bootstrap` | Yes |
+| `COGNITO_CLIENT_ID` | Cognito User Pool Client ID | `7p11hp6gcklhctcr9qffne71vl` | Yes |
+| `COGNITO_USER_POOL_ID` | Cognito User Pool ID | `us-east-1_IMi3kSuB8` | Yes |
+| `TABLE_NAME` | DynamoDB table name | `igad-testing-main-table` | Yes |
+| `PROPOSALS_BUCKET` | S3 bucket for documents | `igad-proposal-documents-123456789` | Yes |
+| `AWS_STACK_NAME` | CloudFormation stack name | `igad-backend-testing` | Yes |
+| `WORKER_FUNCTION_NAME` | Worker Lambda function name | `igad-backend-testing-AnalysisWorkerFunction` | Yes |
+| `ENVIRONMENT` | Deployment environment | `testing` or `production` | Yes |
+| `CORS_ALLOWED_ORIGINS` | Comma-separated allowed origins | `https://example.com,https://www.example.com` | Yes |
+| `VECTOR_BUCKET` | S3 Vector storage bucket | `igad-proposals-vectors-testing` | No |
+| `AWS_REGION` | AWS region | `us-east-1` | Auto-set |
+| `AWS_PROFILE` | AWS profile (local dev only) | `IBD-DEV` | Dev only |
+
+### Worker Function Environment Variables
+
+Defined in `template.yaml:174-179` for the async worker:
+
+```yaml
+Environment:
+  Variables:
+    TABLE_NAME: igad-testing-main-table
+    PROPOSALS_BUCKET: !Ref ProposalDocumentsBucket
+    COGNITO_CLIENT_ID: 7p11hp6gcklhctcr9qffne71vl
+    COGNITO_USER_POOL_ID: us-east-1_IMi3kSuB8
+```
+
+## Local Development Environment
+
+For local development, create a `.env` file in `backend/` directory:
+
+```bash
+# backend/.env
+
+# AWS Configuration
+AWS_REGION=us-east-1
+AWS_PROFILE=IBD-DEV
+
+# Cognito Configuration
+COGNITO_USER_POOL_ID=us-east-1_IMi3kSuB8
+COGNITO_CLIENT_ID=7p11hp6gcklhctcr9qffne71vl
+
+# DynamoDB Configuration
+TABLE_NAME=igad-testing-main-table
+
+# S3 Configuration
+PROPOSALS_BUCKET=igad-proposal-documents-123456789
+VECTOR_BUCKET=igad-proposals-vectors-testing
+
+# Application Configuration
+ENVIRONMENT=development
+LOG_LEVEL=DEBUG
+CORS_ALLOWED_ORIGINS=http://localhost:3000
+
+# Optional: Worker Function
+WORKER_FUNCTION_NAME=igad-backend-testing-AnalysisWorkerFunction
+```
+
+<Warning>
+  Never commit `.env` files to version control. Add `.env` to `.gitignore`.
+</Warning>
+
+### Environment Variable Usage in Code
+
+Access environment variables in Python:
+
+```python
+import os
+
+# Required variables
+table_name = os.environ.get("TABLE_NAME")
+bucket_name = os.environ.get("PROPOSALS_BUCKET")
+cognito_client_id = os.environ.get("COGNITO_CLIENT_ID")
+
+# Optional variables with defaults
+region = os.environ.get("AWS_REGION", "us-east-1")
+environment = os.environ.get("ENVIRONMENT", "development")
+
+# Validate required variables
+if not bucket_name:
+    raise Exception("PROPOSALS_BUCKET environment variable not set")
+```
+
+Examples in codebase:
+- `backend/app/tools/proposal_writer/rfp_analysis/service.py:46-48`
+- `backend/app/database/client.py:21-22`
+- `backend/app/middleware/auth_middleware.py:42`
+
+## AWS Resource Configuration
+
+### Cognito User Pools
+
+Amazon Cognito manages user authentication and authorization.
+
+#### Testing Environment Cognito
+
+**User Pool ID**: `us-east-1_IMi3kSuB8`
+**Client ID**: `7p11hp6gcklhctcr9qffne71vl`
+
+**Password Policy:**
+
+```json
+{
+  "minLength": 8,
+  "requireLowercase": true,
+  "requireUppercase": true,
+  "requireDigits": true,
+  "requireSymbols": true
+}
+```
+
+**User Groups:**
+
+- `Admin` - Full access to all features
+- `Editor` - Create and edit proposals
+- `Viewer` - Read-only access
+
+#### Production Environment Cognito
+
+**Password Policy (Stricter):**
+
+```json
+{
+  "minLength": 12,
+  "requireLowercase": true,
+  "requireUppercase": true,
+  "requireDigits": true,
+  "requireSymbols": true
+}
+```
+
+**MFA Configuration**: Optional (users can enable)
+
+#### Setup Cognito User Pool
+
+Use the setup script:
+
+```bash
+cd igad-app
+./scripts/setup-cognito.sh
+```
+
+See `scripts/setup-cognito.sh:1`
+
+**Manual setup:**
+
+```bash
+# Create user pool
+USER_POOL_ID=$(aws cognito-idp create-user-pool \
+  --pool-name "igad-testing-user-pool" \
+  --policies '{
+    "PasswordPolicy": {
+      "MinimumLength": 8,
+      "RequireUppercase": true,
+      "RequireLowercase": true,
+      "RequireNumbers": true,
+      "RequireSymbols": false
+    }
+  }' \
+  --auto-verified-attributes email \
+  --username-attributes email \
+  --profile IBD-DEV \
+  --query 'UserPool.Id' \
+  --output text)
+
+# Create user pool client
+CLIENT_ID=$(aws cognito-idp create-user-pool-client \
+  --user-pool-id "$USER_POOL_ID" \
+  --client-name "igad-testing-client" \
+  --explicit-auth-flows ADMIN_NO_SRP_AUTH ALLOW_USER_PASSWORD_AUTH ALLOW_REFRESH_TOKEN_AUTH \
+  --generate-secret false \
+  --profile IBD-DEV \
+  --query 'UserPoolClient.ClientId' \
+  --output text)
+
+echo "User Pool ID: $USER_POOL_ID"
+echo "Client ID: $CLIENT_ID"
+```
+
+#### Configure Cognito Groups
+
+```bash
+python3 backend/scripts/setup/setup_cognito_groups.py
+```
+
+Requires `COGNITO_USER_POOL_ID` environment variable.
+
+#### Configure Email Templates
+
+Cognito sends emails for user invitations, verification, and password resets.
+
+**Development:**
+
+```bash
+python3 backend/scripts/deployment/configure_cognito_emails.py \
+  --user-pool-id us-east-1_EULeelICj \
+  --profile IBD-DEV
+```
+
+**Production:**
+
+```bash
+python3 backend/scripts/deployment/deploy_production_emails.py
+```
+
+See `backend/scripts/deployment/README_EMAIL_DEPLOYMENT.md:1` for details.
+
+**Email Configuration Options:**
+
+- `COGNITO_DEFAULT` - Use Cognito's email service (recommended)
+- `SES` - Use Amazon SES (requires domain verification)
+
+### DynamoDB Tables
+
+The platform uses a single-table design for all data.
+
+#### Table Structure
+
+**Testing Table**: `igad-testing-main-table`
+**Production Table**: `igad-prod-main-table` (inferred)
+
+**Primary Key:**
+
+- `PK` (Partition Key): String
+- `SK` (Sort Key): String
+
+**Global Secondary Index (GSI1):**
+
+- `GSI1PK` (Partition Key): String
+- `GSI1SK` (Sort Key): String
+
+#### Access Pattern Examples
+
+**Proposals by User:**
+
+```python
+response = table.query(
+    IndexName='GSI1',
+    KeyConditionExpression='GSI1PK = :pk AND begins_with(GSI1SK, :sk)',
+    ExpressionAttributeValues={
+        ':pk': f'USER#{user_id}',
+        ':sk': 'PROPOSAL#'
+    }
+)
+```
+
+**Proposal Metadata:**
+
+```python
+response = table.get_item(
+    Key={
+        'PK': f'PROPOSAL#{proposal_code}',
+        'SK': 'METADATA'
+    }
+)
+```
+
+#### Table Configuration
+
+**Testing Environment:**
+
+```json
+{
+  "billingMode": "ON_DEMAND",
+  "encryption": "AWS_MANAGED",
+  "pointInTimeRecovery": false
+}
+```
+
+**Production Environment:**
+
+```json
+{
+  "billingMode": "ON_DEMAND",
+  "encryption": "AWS_MANAGED",
+  "pointInTimeRecovery": true
+}
+```
+
+#### Create DynamoDB Table Manually
+
+```bash
+aws dynamodb create-table \
+  --table-name igad-testing-main-table \
+  --attribute-definitions \
+    AttributeName=PK,AttributeType=S \
+    AttributeName=SK,AttributeType=S \
+    AttributeName=GSI1PK,AttributeType=S \
+    AttributeName=GSI1SK,AttributeType=S \
+  --key-schema \
+    AttributeName=PK,KeyType=HASH \
+    AttributeName=SK,KeyType=RANGE \
+  --global-secondary-indexes \
+    IndexName=GSI1,KeySchema=[{AttributeName=GSI1PK,KeyType=HASH},{AttributeName=GSI1SK,KeyType=RANGE}],Projection={ProjectionType=ALL} \
+  --billing-mode PAY_PER_REQUEST \
+  --profile IBD-DEV \
+  --region us-east-1
+```
+
+### S3 Buckets
+
+The platform uses multiple S3 buckets for different purposes.
+
+#### Proposal Documents Bucket
+
+**Bucket Name Pattern**: `igad-proposal-documents-${AWS::AccountId}`
+
+**Configuration:**
+
+```yaml
+VersioningConfiguration:
+  Status: Enabled
+LifecycleConfiguration:
+  Rules:
+    - Id: DeleteOldVersions
+      Status: Enabled
+      NoncurrentVersionExpirationInDays: 30
+CorsConfiguration:
+  CorsRules:
+    - AllowedHeaders: ['*']
+      AllowedMethods: [GET, PUT, POST, DELETE]
+      AllowedOrigins: ['*']
+      MaxAge: 3000
+PublicAccessBlockConfiguration:
+  BlockPublicAcls: true
+  BlockPublicPolicy: true
+  IgnorePublicAcls: true
+  RestrictPublicBuckets: true
+```
+
+Defined in `template.yaml:361-383`
+
+**Folder Structure:**
+
+```
+igad-proposal-documents-123456789/
+├── proposals/
+│   ├── PROP-001/
+│   │   ├── rfp.pdf
+│   │   ├── concept-document.docx
+│   │   └── reference-1.pdf
+│   └── PROP-002/
+│       └── rfp.pdf
+├── documents/
+│   └── user-uploads/
+└── generated/
+    └── templates/
+```
+
+#### Website Bucket
+
+**Bucket Name Pattern**: Auto-generated by CloudFormation (e.g., `igad-testing-websitebucket-abc123`)
+
+**Configuration:**
+
+```yaml
+AccessControl: Private
+CorsConfiguration:
+  CorsRules:
+    - AllowedHeaders: ['*']
+      AllowedMethods: [GET, HEAD]
+      AllowedOrigins: ['*']
+      MaxAge: 3000
+```
+
+Accessed via CloudFront with Origin Access Control (OAC).
+
+#### Vector Storage Bucket
+
+**Bucket Name Pattern**: `igad-proposals-vectors-{environment}`
+
+- Testing: `igad-proposals-vectors-testing`
+- Production: `igad-proposals-vectors-production`
+
+**Setup:**
+
+```bash
+python3 scripts/setup-s3-vectors.py
+```
+
+See `scripts/setup-s3-vectors.py:1`
+
+**Vector Indexes:**
+
+1. **reference-proposals-index**
+   - Dimension: 1024
+   - Distance Metric: Cosine
+   - Data Type: float32
+
+2. **existing-work-index**
+   - Dimension: 1024
+   - Distance Metric: Cosine
+   - Data Type: float32
+
+**Metadata Configuration:**
+
+```python
+metadataConfiguration={
+    'nonFilterableMetadataKeys': ['upload_date']
+    # Filterable keys (automatically indexed):
+    # - proposal_id
+    # - document_name
+    # - donor
+    # - sector
+    # - source_text
+}
+```
+
+See `scripts/setup-s3-vectors.py:44-46`
+
+### Bedrock Configuration
+
+Amazon Bedrock provides AI/ML capabilities for the platform.
+
+#### Models Used
+
+- **Claude 3 Sonnet**: General-purpose text generation
+- **Claude 3 Haiku**: Fast responses for simple tasks
+- **Titan Embeddings**: Text embeddings for vector search
+
+#### Knowledge Base
+
+**Knowledge Base ID**: `NPDZSLKCYX`
+
+Defined in `template.yaml:94`
+
+**Permissions:**
+
+```yaml
+- Effect: Allow
+  Action:
+    - bedrock:Retrieve
+    - bedrock:RetrieveAndGenerate
+  Resource:
+    - !Sub 'arn:aws:bedrock:${AWS::Region}:${AWS::AccountId}:knowledge-base/NPDZSLKCYX'
+```
+
+### CloudFront Configuration
+
+CloudFront distributes the frontend globally.
+
+#### Cache Behaviors
+
+**Default Behavior (Frontend):**
+
+```yaml
+TargetOriginId: S3Origin
+ViewerProtocolPolicy: redirect-to-https
+AllowedMethods: [GET, HEAD, OPTIONS]
+CachedMethods: [GET, HEAD]
+```
+
+**API Behavior:**
+
+```yaml
+PathPattern: "/api/*"
+TargetOriginId: ApiOrigin
+ViewerProtocolPolicy: https-only
+AllowedMethods: [GET, HEAD, OPTIONS, PUT, POST, PATCH, DELETE]
+# Caching disabled
+DefaultTTL: 0
+MinTTL: 0
+MaxTTL: 0
+```
+
+#### Custom Error Pages
+
+SPA routing support:
+
+```yaml
+CustomErrorResponses:
+  - ErrorCode: 404
+    ResponseCode: 200
+    ResponsePagePath: /index.html
+  - ErrorCode: 403
+    ResponseCode: 200
+    ResponsePagePath: /index.html
+```
+
+#### CloudFront Function
+
+Rewrites requests for SPA routing:
+
+```javascript
+function handler(event) {
+  var request = event.request;
+  var uri = request.uri;
+
+  // Don't rewrite API requests
+  if (uri.startsWith('/api/')) {
+    return request;
+  }
+
+  // Don't rewrite static assets
+  if (uri.includes('.') && !uri.endsWith('/')) {
+    return request;
+  }
+
+  // Rewrite routes to index.html
+  if (!uri.includes('.') || uri.endsWith('/')) {
+    request.uri = '/index.html';
+  }
+
+  return request;
+}
+```
+
+Defined in `template.yaml:335-356`
+
+## IAM Permissions
+
+Lambda functions require specific IAM permissions.
+
+### API Function Permissions
+
+Defined in `template.yaml:46-119`:
+
+**Cognito:**
+
+```yaml
+- cognito-idp:AdminInitiateAuth
+- cognito-idp:AdminRespondToAuthChallenge
+- cognito-idp:AdminGetUser
+- cognito-idp:AdminCreateUser
+- cognito-idp:AdminSetUserPassword
+- cognito-idp:AdminDeleteUser
+- cognito-idp:AdminEnableUser
+- cognito-idp:AdminDisableUser
+- cognito-idp:AdminUpdateUserAttributes
+- cognito-idp:AdminAddUserToGroup
+- cognito-idp:AdminRemoveUserFromGroup
+- cognito-idp:AdminListGroupsForUser
+- cognito-idp:ListUsers
+- cognito-idp:ListGroups
+- cognito-idp:ForgotPassword
+- cognito-idp:ConfirmForgotPassword
+```
+
+**DynamoDB:**
+
+```yaml
+- dynamodb:GetItem
+- dynamodb:PutItem
+- dynamodb:UpdateItem
+- dynamodb:DeleteItem
+- dynamodb:Query
+- dynamodb:Scan
+- dynamodb:BatchGetItem
+- dynamodb:BatchWriteItem
+```
+
+**S3:**
+
+```yaml
+- s3:PutObject
+- s3:GetObject
+- s3:DeleteObject
+- s3:ListBucket
+```
+
+**Bedrock:**
+
+```yaml
+- bedrock:InvokeModel
+- bedrock:InvokeModelWithResponseStream
+- bedrock:Retrieve
+- bedrock:RetrieveAndGenerate
+```
+
+**S3 Vectors:**
+
+```yaml
+- s3vectors:PutVectors
+- s3vectors:QueryVectors
+- s3vectors:GetVectors
+- s3vectors:DeleteVectors
+- s3vectors:ListVectors
+- s3vectors:DescribeVectorIndex
+- s3vectors:ListIndexes
+```
+
+**Lambda:**
+
+```yaml
+- lambda:InvokeFunction
+```
+
+**SES:**
+
+```yaml
+- ses:SendEmail
+- ses:SendRawEmail
+```
+
+### Worker Function Permissions
+
+Defined in `template.yaml:180-226`:
+
+- Same DynamoDB, S3, Bedrock, and S3 Vectors permissions
+- Additional: `lambda:ListFunctions` for function discovery
+
+## CORS Configuration
+
+CORS is handled by FastAPI middleware in the Lambda function.
+
+### Allowed Origins
+
+**Testing:**
+
+```
+https://igad-innovation-hub.com
+https://www.igad-innovation-hub.com
+https://test-igad-hub.alliance.cgiar.org
+```
+
+**Production:**
+
+```
+https://igad-innovation-hub.com
+https://www.igad-innovation-hub.com
+```
+
+**Local Development:**
+
+```
+http://localhost:3000
+http://localhost:5173
+```
+
+### Configure CORS in Code
+
+Defined in `backend/app/main.py:54-63`:
+
+```python
+import os
+from fastapi.middleware.cors import CORSMiddleware
+
+ENVIRONMENT = os.getenv("ENVIRONMENT", "development")
+
+if ENVIRONMENT in ["production", "testing"]:
+    allowed_origins = os.getenv("CORS_ALLOWED_ORIGINS", "").split(",")
+else:
+    allowed_origins = ["http://localhost:3000", "http://localhost:5173"]
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=allowed_origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+```
+
+## Configuration Files
+
+### Testing Configuration
+
+`config/testing.json:1`:
+
+```json
+{
+  "environment": "testing",
+  "region": "us-east-1",
+  "resourcePrefix": "igad-testing",
+  "apiGateway": { "stage": "test" },
+  "lambda": { "memorySize": 128, "timeout": 30 },
+  "dynamodb": { "billingMode": "ON_DEMAND" },
+  "cognito": {
+    "passwordPolicy": {
+      "minLength": 8,
+      "requireLowercase": true,
+      "requireUppercase": true,
+      "requireDigits": true,
+      "requireSymbols": true
+    },
+    "mfaConfiguration": "OFF"
+  },
+  "s3": { "versioning": false, "encryption": "S3_MANAGED" },
+  "cloudwatch": { "logRetention": 7 }
+}
+```
+
+### Production Configuration
+
+`config/production.json:1`:
+
+```json
+{
+  "environment": "production",
+  "region": "us-east-1",
+  "resourcePrefix": "igad-prod",
+  "apiGateway": { "stage": "prod" },
+  "lambda": { "memorySize": 256, "timeout": 30 },
+  "dynamodb": {
+    "billingMode": "ON_DEMAND",
+    "pointInTimeRecovery": true
+  },
+  "cognito": {
+    "passwordPolicy": {
+      "minLength": 12,
+      "requireLowercase": true,
+      "requireUppercase": true,
+      "requireDigits": true,
+      "requireSymbols": true
+    },
+    "mfaConfiguration": "OPTIONAL"
+  },
+  "s3": { "versioning": true, "encryption": "S3_MANAGED" },
+  "cloudwatch": { "logRetention": 30 }
+}
+```
+
+## Security Best Practices
+
+<Warning>
+  Follow these security practices when configuring the environment:
+</Warning>
+
+<Check>Never hardcode credentials in code or configuration files</Check>
+<Check>Use AWS IAM roles with least privilege access</Check>
+<Check>Enable S3 bucket versioning in production</Check>
+<Check>Enable DynamoDB point-in-time recovery in production</Check>
+<Check>Use HTTPS only for all API endpoints</Check>
+<Check>Restrict CORS to specific domains (never use `*` in production)</Check>
+<Check>Enable CloudWatch logging for all Lambda functions</Check>
+<Check>Rotate Cognito client secrets regularly (if using secrets)</Check>
+<Check>Use strong password policies in Cognito (12+ chars in production)</Check>
+<Check>Enable MFA for admin users in production</Check>
+
+## Troubleshooting Configuration Issues
+
+### Environment Variable Not Set
+
+**Error**: `PROPOSALS_BUCKET environment variable not set`
+
+**Solution**: Verify environment variable in Lambda function:
+
+```bash
+aws lambda get-function-configuration \
+  --function-name igad-backend-testing-ApiFunction \
+  --profile IBD-DEV \
+  --query 'Environment.Variables'
+```
+
+Update if needed by redeploying stack.
+
+### Cognito Authentication Fails
+
+**Error**: `Invalid client id` or `User pool does not exist`
+
+**Solution**: Verify Cognito configuration:
+
+```bash
+aws cognito-idp describe-user-pool \
+  --user-pool-id us-east-1_IMi3kSuB8 \
+  --profile IBD-DEV
+
+aws cognito-idp describe-user-pool-client \
+  --user-pool-id us-east-1_IMi3kSuB8 \
+  --client-id 7p11hp6gcklhctcr9qffne71vl \
+  --profile IBD-DEV
+```
+
+### DynamoDB Access Denied
+
+**Error**: `User is not authorized to perform: dynamodb:Query on resource`
+
+**Solution**: Check IAM role permissions:
+
+```bash
+aws iam get-role-policy \
+  --role-name igad-backend-testing-ApiFunction-Role \
+  --policy-name DynamoDBPolicy \
+  --profile IBD-DEV
+```
+
+Verify `template.yaml:71-83` includes required permissions.
+
+### S3 Vectors Not Working
+
+**Error**: `S3 Vectors service not available`
+
+**Solution**: S3 Vectors may not be enabled in your region. Check availability:
+
+```bash
+aws s3vectors list-vector-buckets --profile IBD-DEV --region us-east-1
+```
+
+If not available, the feature is commented out in `template.yaml:385-399`.
+
+## Next Steps
+
+<Card title="Testing Deployment" icon="flask" href="/deployment/testing">
+  Deploy to testing environment with configured settings
+</Card>
+
+<Card title="Production Deployment" icon="rocket" href="/deployment/production">
+  Deploy to production with production configuration
+</Card>

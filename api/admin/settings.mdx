@@ -1,0 +1,481 @@
+---
+title: 'System Settings'
+description: 'Admin API endpoints for system settings and configuration'
+---
+
+## Overview
+
+The System Settings API provides endpoints for managing platform-wide configuration and administrative settings for the Alliance IGAD Innovation Hub.
+
+**Base URL:** `/api/admin`
+
+**Authentication:** All endpoints require admin authentication via JWT Bearer token with `is_admin: true` privileges.
+
+## Authentication
+
+All admin endpoints require a JWT Bearer token from a user with admin privileges:
+
+```http
+Authorization: Bearer <jwt_token>
+```
+
+**Admin Verification:**
+
+The `verify_admin_access` middleware checks:
+1. Valid JWT token
+2. User has `is_admin: true` in token payload
+
+**Error Responses:**
+
+- `401 Unauthorized` - Missing or invalid token
+- `403 Forbidden` - Valid token but user is not an admin
+
+```json
+{
+  "detail": "Admin access required"
+}
+```
+
+## User Management
+
+### List Users
+
+```http
+GET /api/admin/users
+```
+
+List all users in the Cognito user pool.
+
+**Response:**
+
+```json
+{
+  "users": [
+    {
+      "username": "user@igad.org",
+      "email": "user@igad.org",
+      "email_verified": true,
+      "status": "CONFIRMED",
+      "enabled": true,
+      "created_at": "2024-01-15T10:30:00Z",
+      "updated_at": "2024-01-15T10:30:00Z",
+      "attributes": {
+        "email": "user@igad.org",
+        "email_verified": "true"
+      }
+    }
+  ],
+  "total": 25
+}
+```
+
+### Get User
+
+```http
+GET /api/admin/users/{username}
+```
+
+Get detailed information about a specific user.
+
+**Path Parameters:**
+
+- `username` (string, required) - User email address
+
+**Response:**
+
+```json
+{
+  "username": "user@igad.org",
+  "email": "user@igad.org",
+  "email_verified": true,
+  "status": "CONFIRMED",
+  "enabled": true,
+  "created_at": "2024-01-15T10:30:00Z",
+  "updated_at": "2024-01-16T14:20:00Z",
+  "attributes": {
+    "email": "user@igad.org",
+    "email_verified": "true",
+    "name": "John Doe"
+  },
+  "groups": ["users"]
+}
+```
+
+**Error Responses:**
+
+- `404 Not Found` - User does not exist
+- `500 Internal Server Error` - Failed to retrieve user
+
+### Create User
+
+```http
+POST /api/admin/users
+```
+
+Create a new user in the system.
+
+**Request Body:**
+
+```json
+{
+  "username": "newuser@igad.org",
+  "email": "newuser@igad.org",
+  "temporary_password": "TempPass123!",
+  "send_email": true
+}
+```
+
+**Fields:**
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `username` | string | Yes | User identifier (email format recommended) |
+| `email` | string | Yes | User email address |
+| `temporary_password` | string | Yes | Initial password (user must change on first login) |
+| `send_email` | boolean | No | Send welcome email with credentials (default: true) |
+
+**Response:** `200 OK`
+
+```json
+{
+  "success": true,
+  "message": "User created successfully",
+  "user": {
+    "username": "newuser@igad.org",
+    "email": "newuser@igad.org",
+    "status": "FORCE_CHANGE_PASSWORD"
+  }
+}
+```
+
+**Error Responses:**
+
+- `400 Bad Request` - User already exists
+  ```json
+  {
+    "success": false,
+    "error": "UserExistsException",
+    "message": "User already exists"
+  }
+  ```
+- `500 Internal Server Error` - Failed to create user
+
+**Behavior:**
+
+- Email addresses are automatically normalized to lowercase
+- Email is automatically verified (`email_verified: true`)
+- User status is set to `FORCE_CHANGE_PASSWORD` requiring password change on first login
+- If `send_email: true`, Cognito sends a welcome email using custom templates
+- If `send_email: false`, the email is suppressed and credentials must be shared manually
+
+### Update User
+
+```http
+PUT /api/admin/users/{username}
+```
+
+Update user attributes.
+
+**Path Parameters:**
+
+- `username` (string, required) - User email address
+
+**Request Body:**
+
+```json
+{
+  "email": "updated@igad.org",
+  "attributes": {
+    "name": "John Doe",
+    "phone_number": "+1234567890"
+  }
+}
+```
+
+**Response:**
+
+```json
+{
+  "success": true,
+  "message": "User updated successfully",
+  "user": {
+    "username": "user@igad.org",
+    "attributes": {
+      "email": "updated@igad.org",
+      "name": "John Doe",
+      "phone_number": "+1234567890"
+    }
+  }
+}
+```
+
+### Delete User
+
+```http
+DELETE /api/admin/users/{username}
+```
+
+Permanently delete a user account.
+
+**Path Parameters:**
+
+- `username` (string, required) - User email address
+
+**Response:**
+
+```json
+{
+  "success": true,
+  "message": "User deleted successfully"
+}
+```
+
+**Warning:** This action is permanent and cannot be undone. All user data will be removed from Cognito.
+
+### Enable User
+
+```http
+POST /api/admin/users/{username}/enable
+```
+
+Enable a disabled user account.
+
+**Path Parameters:**
+
+- `username` (string, required) - User email address
+
+**Response:**
+
+```json
+{
+  "success": true,
+  "message": "User enabled successfully"
+}
+```
+
+### Disable User
+
+```http
+POST /api/admin/users/{username}/disable
+```
+
+Disable a user account (prevents login without deleting data).
+
+**Path Parameters:**
+
+- `username` (string, required) - User email address
+
+**Response:**
+
+```json
+{
+  "success": true,
+  "message": "User disabled successfully"
+}
+```
+
+**Note:** Disabled users cannot log in but their data is preserved. Use this for temporary access revocation.
+
+### Reset User Password
+
+```http
+POST /api/admin/users/{username}/reset-password
+```
+
+Reset a user's password and send them a reset link.
+
+**Path Parameters:**
+
+- `username` (string, required) - User email address
+
+**Response:**
+
+```json
+{
+  "success": true,
+  "message": "Password reset email sent"
+}
+```
+
+**Behavior:**
+
+- Sends a password reset email to the user's registered email address
+- User receives a temporary code to set a new password
+- Previous password is invalidated
+
+## Group Management
+
+### List Groups
+
+```http
+GET /api/admin/groups
+```
+
+List all user groups in the Cognito user pool.
+
+**Response:**
+
+```json
+{
+  "groups": [
+    {
+      "name": "admins",
+      "description": "Administrator users",
+      "created_at": "2024-01-01T00:00:00Z",
+      "updated_at": "2024-01-01T00:00:00Z"
+    },
+    {
+      "name": "users",
+      "description": "Regular users",
+      "created_at": "2024-01-01T00:00:00Z",
+      "updated_at": "2024-01-01T00:00:00Z"
+    }
+  ],
+  "total": 2
+}
+```
+
+### Add User to Group
+
+```http
+POST /api/admin/users/{username}/groups/{group_name}
+```
+
+Add a user to a group.
+
+**Path Parameters:**
+
+- `username` (string, required) - User email address
+- `group_name` (string, required) - Group name (e.g., "admins", "users")
+
+**Response:**
+
+```json
+{
+  "success": true,
+  "message": "User added to group successfully",
+  "user": "user@igad.org",
+  "group": "admins"
+}
+```
+
+### Remove User from Group
+
+```http
+DELETE /api/admin/users/{username}/groups/{group_name}
+```
+
+Remove a user from a group.
+
+**Path Parameters:**
+
+- `username` (string, required) - User email address
+- `group_name` (string, required) - Group name
+
+**Response:**
+
+```json
+{
+  "success": true,
+  "message": "User removed from group successfully",
+  "user": "user@igad.org",
+  "group": "admins"
+}
+```
+
+## Configuration Details
+
+### AWS Cognito Integration
+
+The system uses AWS Cognito for user management with the following configuration:
+
+- **Region:** `us-east-1` (or configured via `AWS_REGION` environment variable)
+- **User Pool ID:** Configured via `COGNITO_USER_POOL_ID` environment variable
+- **Client ID:** Configured via `COGNITO_CLIENT_ID` environment variable
+
+### User Status Values
+
+Users can have the following status values:
+
+- `CONFIRMED` - User has verified email and set password
+- `FORCE_CHANGE_PASSWORD` - User must change password on next login (newly created users)
+- `RESET_REQUIRED` - Admin has reset the password
+- `UNCONFIRMED` - User has not verified email
+- `DISABLED` - User account is disabled
+
+### Email Notifications
+
+When `send_email: true` is used during user creation, Cognito sends:
+
+1. **Welcome Email** - Contains temporary password and login instructions
+2. **Custom Templates** - Uses platform-specific email templates configured in Cognito
+
+When `send_email: false`:
+- No email is sent
+- Admin must manually share credentials with the user
+- Use this for bulk imports or when using external notification systems
+
+## Error Handling
+
+All endpoints follow consistent error response format:
+
+```json
+{
+  "detail": "Error description"
+}
+```
+
+**Common HTTP Status Codes:**
+
+- `200 OK` - Successful request
+- `201 Created` - Resource created successfully
+- `400 Bad Request` - Validation error or business logic violation
+- `401 Unauthorized` - Authentication required or failed
+- `403 Forbidden` - Insufficient permissions (not an admin)
+- `404 Not Found` - Resource not found
+- `500 Internal Server Error` - Server-side error
+
+**Cognito-Specific Errors:**
+
+- `UserExistsException` - User already exists (returned as 400)
+- `UserNotFoundException` - User not found (returned as 404)
+- `InvalidParameterException` - Invalid input parameters (returned as 400)
+- `LimitExceededException` - Too many requests (returned as 429)
+
+## Best Practices
+
+1. **User Creation:**
+   - Always use email addresses as usernames for consistency
+   - Use strong temporary passwords (min 8 chars, uppercase, lowercase, numbers, symbols)
+   - Enable `send_email` for individual user creation
+   - Disable `send_email` for bulk imports
+
+2. **Password Management:**
+   - Use password reset instead of manually setting passwords
+   - Enforce password change on first login
+   - Document password requirements in user communications
+
+3. **User Lifecycle:**
+   - Disable users instead of deleting for audit trail
+   - Only delete users when required for data privacy compliance
+   - Review user groups regularly
+
+4. **Group Management:**
+   - Use groups to manage permissions at scale
+   - Document group purposes and permissions
+   - Audit group memberships periodically
+
+5. **Security:**
+   - Regularly review admin user list
+   - Use principle of least privilege for group assignments
+   - Monitor failed authentication attempts
+   - Implement password rotation policies
+
+## Rate Limiting
+
+AWS Cognito enforces rate limits on user management operations:
+
+- **User operations:** 10 requests per second per account
+- **Bulk operations:** Consider batching with delays
+
+ If rate limits are exceeded, you'll receive a `429 Too Many Requests` error.

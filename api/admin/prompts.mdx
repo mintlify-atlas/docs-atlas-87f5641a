@@ -1,0 +1,512 @@
+---
+title: 'Prompts Management'
+description: 'Admin API endpoints for managing AI prompts and templates'
+---
+
+## Overview
+
+The Prompts Management API provides CRUD operations for managing AI prompts used throughout the Alliance IGAD Innovation Hub platform. Prompts control how AI models generate content for proposals, newsletters, and other features.
+
+**Base URL:** `/api/admin/prompts`
+
+**Authentication:** All endpoints require admin authentication via JWT Bearer token.
+
+## Prompt Schema
+
+Prompts follow a structured schema with the following key fields:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `id` | string | Unique prompt identifier (UUID) |
+| `name` | string | Display name for the prompt (1-200 chars) |
+| `section` | enum | Main section (e.g., `proposal_writer`, `newsletter_generator`) |
+| `sub_section` | string | Sub-section identifier (e.g., `step-1`, `step-2`) |
+| `route` | string | Optional route identifier for organizing prompts |
+| `categories` | string[] | Categories where this prompt applies |
+| `tags` | string[] | Tags for filtering and organization |
+| `system_prompt` | string | System-level instructions for the AI model |
+| `user_prompt_template` | string | User-facing prompt template with placeholders |
+| `version` | integer | Version number (starts at 1) |
+| `is_active` | boolean | Whether the prompt is active and available for use |
+| `tone` | string | Desired output tone (e.g., "Professional and informative") |
+| `output_format` | string | Expected output format description |
+| `created_by` | string | Email of user who created the prompt |
+| `updated_by` | string | Email of user who last updated the prompt |
+| `created_at` | datetime | ISO 8601 timestamp |
+| `updated_at` | datetime | ISO 8601 timestamp |
+| `comments_count` | integer | Number of comments on this prompt |
+
+### Prompt Sections
+
+Available sections (from `ProposalSection` enum):
+
+- `proposal_writer` - Main proposal generation feature
+- `newsletter_generator` - Newsletter generation feature
+- Legacy sections: `problem_statement`, `objectives`, `methodology`, `budget`, etc.
+
+### Template Placeholders
+
+Prompt templates support two placeholder formats:
+
+1. **Double curly braces:** `{{VARIABLE_NAME}}`
+2. **Curly + square brackets:** `{[VARIABLE_NAME]}`
+
+Both formats are automatically replaced at runtime with actual values.
+
+## Endpoints
+
+### List Prompts
+
+```http
+GET /api/admin/prompts/list
+```
+
+List prompts with filtering and pagination.
+
+**Query Parameters:**
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `section` | ProposalSection | Filter by section |
+| `sub_section` | string | Filter by sub-section |
+| `tag` | string | Filter by tag |
+| `search` | string | Search in name, prompts, route, and tags |
+| `route` | string | Filter by route |
+| `is_active` | boolean | Filter by active status |
+| `limit` | integer | Results per page (1-100, default: 20) |
+| `offset` | integer | Pagination offset (default: 0) |
+
+**Response:**
+
+```json
+{
+  "prompts": [
+    {
+      "id": "550e8400-e29b-41d4-a716-446655440000",
+      "name": "RFP Analysis Prompt",
+      "section": "proposal_writer",
+      "sub_section": "step-1",
+      "categories": ["RFP Analysis"],
+      "tags": ["analysis", "rfp"],
+      "system_prompt": "You are an expert at analyzing RFPs...",
+      "user_prompt_template": "Analyze the following RFP: {{rfp_text}}",
+      "version": 1,
+      "is_active": true,
+      "created_by": "admin@igad.org",
+      "updated_by": "admin@igad.org",
+      "created_at": "2024-01-15T10:30:00Z",
+      "updated_at": "2024-01-15T10:30:00Z",
+      "comments_count": 3
+    }
+  ],
+  "total": 42,
+  "has_more": true
+}
+```
+
+### Get Prompt
+
+```http
+GET /api/admin/prompts/{prompt_id}
+```
+
+Get a specific prompt by ID and optional version.
+
+**Path Parameters:**
+
+- `prompt_id` (string, required) - Prompt UUID
+
+**Query Parameters:**
+
+- `version` (string, optional) - Version number or "latest" (default: latest)
+
+**Response:**
+
+```json
+{
+  "id": "550e8400-e29b-41d4-a716-446655440000",
+  "name": "RFP Analysis Prompt",
+  "section": "proposal_writer",
+  "sub_section": "step-1",
+  "categories": ["RFP Analysis"],
+  "tags": ["analysis", "rfp"],
+  "system_prompt": "You are an expert at analyzing RFPs...",
+  "user_prompt_template": "Analyze the following RFP: {{rfp_text}}",
+  "version": 1,
+  "is_active": true,
+  "tone": "Professional and analytical",
+  "output_format": "Structured JSON with key findings",
+  "created_by": "admin@igad.org",
+  "updated_by": "admin@igad.org",
+  "created_at": "2024-01-15T10:30:00Z",
+  "updated_at": "2024-01-15T10:30:00Z",
+  "comments_count": 3
+}
+```
+
+**Error Responses:**
+
+- `404` - Prompt not found
+- `400` - Invalid version format
+
+### Create Prompt
+
+```http
+POST /api/admin/prompts/create
+```
+
+Create a new prompt. New prompts are active by default (version 1).
+
+**Request Body:**
+
+```json
+{
+  "name": "Concept Evaluation Prompt",
+  "section": "proposal_writer",
+  "sub_section": "step-2",
+  "route": "/analyze-concept",
+  "categories": ["Concept Analysis", "Feasibility"],
+  "tags": ["concept", "evaluation"],
+  "system_prompt": "You are an expert at evaluating project concepts for feasibility and alignment with organizational goals.",
+  "user_prompt_template": "Evaluate this concept: {{concept_text}}\n\nOrganization focus: {{organization_focus}}",
+  "tone": "Professional and constructive",
+  "output_format": "Detailed evaluation with scores and recommendations"
+}
+```
+
+**Response:** `201 Created`
+
+```json
+{
+  "id": "660e8400-e29b-41d4-a716-446655440001",
+  "name": "Concept Evaluation Prompt",
+  "section": "proposal_writer",
+  "sub_section": "step-2",
+  "version": 1,
+  "is_active": true,
+  "created_by": "admin@igad.org",
+  "created_at": "2024-01-16T14:20:00Z",
+  "updated_at": "2024-01-16T14:20:00Z"
+}
+```
+
+**Error Responses:**
+
+- `400` - Validation error or duplicate active prompt for same section/route/subsection/categories
+- `401` - Unauthorized (invalid or missing token)
+
+**Active Prompt Uniqueness:**
+
+Only one prompt can be active for a unique combination of:
+- `section`
+- `route`
+- `sub_section`
+- `categories` (as a set)
+
+Creating a new active prompt with the same combination will fail with a 400 error.
+
+### Update Prompt
+
+```http
+PUT /api/admin/prompts/{prompt_id}/update
+```
+
+Update an existing prompt. All fields are optional.
+
+**Path Parameters:**
+
+- `prompt_id` (string, required) - Prompt UUID
+
+**Request Body:**
+
+```json
+{
+  "system_prompt": "Updated system instructions...",
+  "user_prompt_template": "Updated template: {{variable}}",
+  "tags": ["updated", "v2"],
+  "change_comment": "Improved clarity and added new variable"
+}
+```
+
+**Response:**
+
+```json
+{
+  "id": "660e8400-e29b-41d4-a716-446655440001",
+  "version": 1,
+  "is_active": true,
+  "updated_by": "admin@igad.org",
+  "updated_at": "2024-01-16T15:45:00Z"
+}
+```
+
+**Error Responses:**
+
+- `404` - Prompt not found
+- `400` - Validation error or duplicate active prompt conflict
+
+### Delete Prompt
+
+```http
+DELETE /api/admin/prompts/{prompt_id}
+```
+
+Delete a specific version or all versions of a prompt.
+
+**Path Parameters:**
+
+- `prompt_id` (string, required) - Prompt UUID
+
+**Query Parameters:**
+
+- `version` (integer, optional) - Specific version to delete. If omitted, deletes all versions.
+
+**Response:**
+
+```json
+{
+  "message": "Prompt deleted successfully"
+}
+```
+
+**Error Responses:**
+
+- `404` - Prompt not found
+- `500` - Deletion failed
+
+### Toggle Active Status
+
+```http
+POST /api/admin/prompts/{prompt_id}/toggle-active
+```
+
+Toggle a prompt's active status (active ↔ inactive).
+
+**Path Parameters:**
+
+- `prompt_id` (string, required) - Prompt UUID
+
+**Response:**
+
+```json
+{
+  "id": "660e8400-e29b-41d4-a716-446655440001",
+  "is_active": false,
+  "updated_at": "2024-01-16T16:00:00Z"
+}
+```
+
+**Error Responses:**
+
+- `404` - Prompt not found
+- `400` - Cannot activate due to conflict with another active prompt
+
+**Note:** When activating a prompt, the system checks for conflicts with other active prompts that have the same section/route/subsection/categories combination.
+
+## Version Control
+
+Prompts use a simple versioning system:
+
+1. **Creation:** New prompts start at version 1
+2. **Updates:** Updates modify the existing version in-place (not creating new versions)
+3. **History:** All changes are tracked in the change history
+
+### Change History
+
+```http
+GET /api/admin/prompts/{prompt_id}/history
+```
+
+Get the complete change history for a prompt.
+
+**Response:**
+
+```json
+{
+  "prompt_id": "660e8400-e29b-41d4-a716-446655440001",
+  "changes": [
+    {
+      "id": "change-123",
+      "prompt_id": "660e8400-e29b-41d4-a716-446655440001",
+      "version": 1,
+      "change_type": "update",
+      "changes": {
+        "system_prompt": {
+          "old": "Original instructions...",
+          "new": "Updated instructions..."
+        }
+      },
+      "comment": "Improved clarity",
+      "author": "admin@igad.org",
+      "author_name": "admin@igad.org",
+      "created_at": "2024-01-16T15:45:00Z"
+    },
+    {
+      "id": "change-122",
+      "prompt_id": "660e8400-e29b-41d4-a716-446655440001",
+      "version": 1,
+      "change_type": "create",
+      "changes": {},
+      "comment": "Initial prompt creation",
+      "author": "admin@igad.org",
+      "author_name": "admin@igad.org",
+      "created_at": "2024-01-16T14:20:00Z"
+    }
+  ],
+  "total": 2
+}
+```
+
+**Change Types:**
+
+- `create` - Initial prompt creation
+- `update` - Content or metadata update
+- `activate` - Prompt activated
+- `deactivate` - Prompt deactivated
+
+## Comments
+
+### Add Comment
+
+```http
+POST /api/admin/prompts/{prompt_id}/comments
+```
+
+Add a comment to a prompt (supports threaded replies).
+
+**Request Body:**
+
+```json
+{
+  "content": "This prompt works well but could use more examples",
+  "parent_id": null
+}
+```
+
+**Response:**
+
+```json
+{
+  "id": "comment-456",
+  "prompt_id": "660e8400-e29b-41d4-a716-446655440001",
+  "parent_id": null,
+  "content": "This prompt works well but could use more examples",
+  "author": "admin@igad.org",
+  "author_name": "admin@igad.org",
+  "created_at": "2024-01-16T16:30:00Z",
+  "replies": []
+}
+```
+
+### Get Comments
+
+```http
+GET /api/admin/prompts/{prompt_id}/comments
+```
+
+Get all comments for a prompt, organized as threads.
+
+**Response:**
+
+```json
+[
+  {
+    "id": "comment-456",
+    "prompt_id": "660e8400-e29b-41d4-a716-446655440001",
+    "content": "This prompt works well but could use more examples",
+    "author": "admin@igad.org",
+    "author_name": "admin@igad.org",
+    "created_at": "2024-01-16T16:30:00Z",
+    "replies": [
+      {
+        "id": "comment-457",
+        "parent_id": "comment-456",
+        "content": "Agreed, I'll add some examples",
+        "author": "user@igad.org",
+        "author_name": "user@igad.org",
+        "created_at": "2024-01-16T16:35:00Z",
+        "replies": []
+      }
+    ]
+  }
+]
+```
+
+## Preview Prompt
+
+```http
+POST /api/admin/prompts/preview
+```
+
+Test a prompt against the AI model without saving it.
+
+**Request Body:**
+
+```json
+{
+  "system_prompt": "You are an expert analyst.",
+  "user_prompt_template": "Analyze: {{text}}",
+  "variables": {
+    "text": "Sample text to analyze"
+  }
+}
+```
+
+**Response:**
+
+```json
+{
+  "output": "Here is the analysis...",
+  "tokens_used": 450,
+  "processing_time": 2.3
+}
+```
+
+## Authentication
+
+All admin endpoints require authentication:
+
+```http
+Authorization: Bearer <jwt_token>
+```
+
+The JWT token must belong to a user with admin privileges (`is_admin: true`). Tokens are obtained through the authentication endpoints.
+
+**Error Responses:**
+
+- `401 Unauthorized` - Missing or invalid token
+- `403 Forbidden` - Valid token but insufficient privileges (not an admin)
+
+## Error Handling
+
+All endpoints follow consistent error response format:
+
+```json
+{
+  "detail": "Error description"
+}
+```
+
+**Common HTTP Status Codes:**
+
+- `200 OK` - Successful GET/PUT request
+- `201 Created` - Successful POST (creation)
+- `400 Bad Request` - Validation error or business logic violation
+- `401 Unauthorized` - Authentication required or failed
+- `403 Forbidden` - Insufficient permissions
+- `404 Not Found` - Resource not found
+- `500 Internal Server Error` - Server-side error
+
+## Rate Limiting
+
+No rate limiting is currently enforced on admin endpoints, but it is recommended to implement reasonable request frequencies to avoid overwhelming the system.
+
+## Best Practices
+
+1. **Prompt Naming:** Use clear, descriptive names that indicate the prompt's purpose
+2. **Versioning:** Use the `change_comment` field when updating prompts to document changes
+3. **Testing:** Always use the preview endpoint to test prompts before activating them
+4. **Active Status:** Only one prompt should be active per section/route/subsection/categories combination
+5. **Categories:** Use consistent category names across related prompts
+6. **Placeholders:** Document required variables in the prompt name or comments
+7. **History:** Review change history before making significant updates

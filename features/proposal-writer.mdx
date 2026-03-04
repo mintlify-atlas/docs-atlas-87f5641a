@@ -1,0 +1,258 @@
+---
+title: Proposal writer
+description: Multi-step AI-powered proposal generation workflow
+---
+
+The Proposal Writer is the core feature of the Alliance IGAD Innovation Hub, providing a structured 4-step workflow to transform RFP documents into polished proposals using AI assistance.
+
+## Workflow Overview
+
+The proposal writing process follows a systematic approach:
+
+<Steps>
+  <Step title="Step 1: Information consolidation">
+    Upload and analyze your RFP document, concept materials, and reference proposals. The AI extracts requirements, evaluation criteria, and key deadlines.
+  </Step>
+
+  <Step title="Step 2: Concept review">
+    Review AI-generated concept analysis, select sections to include, and provide feedback. The system generates an enhanced concept document aligned with RFP requirements.
+  </Step>
+
+  <Step title="Step 3: Structure and workplan">
+    Generate a proposal structure based on RFP requirements and your concept. The AI creates a logical outline with sections, subsections, and workplan components.
+  </Step>
+
+  <Step title="Step 4: Proposal review">
+    Generate a draft proposal template or AI-written draft, then analyze it for completeness, alignment, and quality. Receive actionable feedback for improvement.
+  </Step>
+</Steps>
+
+## Step 1: Information consolidation
+
+### Document upload
+
+Upload the following materials:
+
+- **RFP Document** (required): The Request for Proposal PDF
+- **Concept Document or Text** (required): Your initial project concept
+- **Reference Proposals** (optional): Previously successful proposals for guidance
+- **Supporting Documents** (optional): Additional context materials
+
+<Note>
+  All uploaded documents are automatically vectorized using Amazon Titan Embed v2 for AI-powered retrieval during generation.
+</Note>
+
+### RFP analysis
+
+Once documents are uploaded, trigger RFP analysis:
+
+```bash
+curl -X POST https://api.igad-hub.com/api/proposals/{proposal_id}/analyze-rfp \
+  -H "Authorization: Bearer YOUR_TOKEN"
+```
+
+The system extracts:
+- **Requirements**: Technical, organizational, and eligibility requirements
+- **Evaluation Criteria**: Scoring framework and weighting
+- **Deliverables**: Expected outputs and milestones
+- **Submission Guidelines**: Format, page limits, and deadlines
+
+### Concept analysis
+
+After RFP analysis completes, analyze your concept:
+
+```bash
+curl -X POST https://api.igad-hub.com/api/proposals/{proposal_id}/analyze-concept \
+  -H "Authorization: Bearer YOUR_TOKEN"
+```
+
+The AI identifies:
+- Sections needing elaboration to meet RFP requirements
+- Gaps between your concept and RFP expectations
+- Strengths to emphasize
+- Suggested improvements
+
+## Step 2: Concept review
+
+### Review generated analysis
+
+The system presents sections identified for elaboration:
+
+```json
+{
+  "sections_needing_elaboration": [
+    {
+      "title": "Climate Adaptation Strategies",
+      "rationale": "RFP requires specific climate resilience approaches",
+      "selected": true
+    },
+    {
+      "title": "Monitoring and Evaluation Framework",
+      "rationale": "RFP mandates detailed M&E methodology",
+      "selected": true
+    }
+  ]
+}
+```
+
+### Select and comment
+
+Toggle section selection and add comments:
+
+```typescript
+const updateEvaluation = {
+  selected_sections: [
+    { title: "Climate Adaptation Strategies", selected: true },
+    { title: "Monitoring and Evaluation Framework", selected: false }
+  ],
+  user_comments: {
+    "Climate Adaptation Strategies": "Focus on drought-resistant crop varieties"
+  }
+}
+```
+
+### Generate concept document
+
+Generate an enhanced concept document incorporating your selections:
+
+```bash
+curl -X POST https://api.igad-hub.com/api/proposals/{proposal_id}/generate-concept-document \
+  -H "Authorization: Bearer YOUR_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"concept_evaluation": ...}'
+```
+
+The result is a markdown document with:
+- Original concept sections
+- AI-generated elaborations for selected topics
+- Integration with RFP requirements
+
+## Step 3: Structure and workplan
+
+### Generate proposal structure
+
+Create a structured outline based on RFP requirements:
+
+```bash
+curl -X POST https://api.igad-hub.com/api/proposals/{proposal_id}/generate-structure-workplan \
+  -H "Authorization: Bearer YOUR_TOKEN"
+```
+
+The AI generates:
+
+- **Section hierarchy**: Main sections and subsections matching RFP format
+- **Page allocation**: Estimated pages per section based on RFP limits
+- **Workplan**: Timeline, activities, milestones, and deliverables
+- **Budget framework**: Budget categories aligned with RFP requirements
+
+### Review and customize
+
+The structure is returned as a JSON object:
+
+```json
+{
+  "sections": [
+    {
+      "title": "Executive Summary",
+      "subsections": [],
+      "estimated_pages": 1,
+      "guidance": "Concise overview highlighting key points"
+    },
+    {
+      "title": "Technical Approach",
+      "subsections": [
+        "Methodology",
+        "Work Plan",
+        "Risk Management"
+      ],
+      "estimated_pages": 8
+    }
+  ],
+  "workplan": {
+    "phases": [...],
+    "milestones": [...]
+  }
+}
+```
+
+## Step 4: Proposal review
+
+### Generate draft template
+
+Create a Word document template with your structure:
+
+```bash
+curl -X POST https://api.igad-hub.com/api/proposals/{proposal_id}/generate-proposal-template \
+  -H "Authorization: Bearer YOUR_TOKEN" \
+  -o proposal-template.docx
+```
+
+The template includes:
+- All sections and subsections from your structure
+- Placeholder guidance text for each section
+- Properly formatted headers and styles
+
+### Analyze draft feedback
+
+Once you've written content, upload and analyze your draft:
+
+```bash
+curl -X POST https://api.igad-hub.com/api/proposals/{proposal_id}/documents/upload-draft \
+  -H "Authorization: Bearer YOUR_TOKEN" \
+  -F "file=@draft-proposal.docx"
+
+curl -X POST https://api.igad-hub.com/api/proposals/{proposal_id}/analyze-draft-feedback \
+  -H "Authorization: Bearer YOUR_TOKEN"
+```
+
+Receive detailed feedback:
+
+```json
+{
+  "overall_score": 7.5,
+  "alignment_with_rfp": 8.0,
+  "technical_soundness": 7.0,
+  "clarity": 8.0,
+  "strengths": [
+    "Strong methodology section",
+    "Clear timeline and milestones"
+  ],
+  "improvements": [
+    "Expand risk mitigation strategies",
+    "Add more detail on monitoring indicators"
+  ],
+  "section_feedback": [
+    {
+      "section": "Technical Approach",
+      "score": 8.5,
+      "comments": "Well-structured and comprehensive"
+    }
+  ]
+}
+```
+
+## Data persistence
+
+All workflow data is stored in DynamoDB:
+
+- **Proposal metadata**: Status, timestamps, user information
+- **Analysis results**: RFP analysis, concept analysis, structure
+- **Generated documents**: Concept document v2, templates
+- **User selections**: Section choices, comments, preferences
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Document management" icon="folder-open" href="/features/document-management">
+    Learn about document upload, storage, and vectorization
+  </Card>
+  <Card title="API reference" icon="code" href="/api/proposals/create">
+    Explore the complete Proposal API
+  </Card>
+  <Card title="Admin prompts" icon="sliders" href="/features/admin-prompts">
+    Customize AI prompts for each workflow step
+  </Card>
+  <Card title="Architecture" icon="diagram-project" href="/architecture">
+    Understand the underlying system architecture
+  </Card>
+</CardGroup>

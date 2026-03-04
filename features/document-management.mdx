@@ -1,0 +1,352 @@
+---
+title: Document management
+description: Upload, store, and manage proposal documents with automatic vectorization
+---
+
+The Document Management system handles all file operations for the proposal workflow, including upload, storage in S3, vectorization for AI retrieval, and deletion with cleanup.
+
+## Supported document types
+
+The platform supports different document types for various purposes:
+
+| Document Type | Formats | Max Size | Vectorized | Purpose |
+|---------------|---------|----------|------------|----------|
+| RFP Document | PDF | 10 MB | No | The Request for Proposal to respond to |
+| Concept Document | PDF, DOC, DOCX | 10 MB | No | Your initial project concept |
+| Concept Text | Plain text | - | Yes | Text-based concept input |
+| Reference Proposals | PDF, DOCX | 5 MB | Yes | Previously successful proposals |
+| Supporting Documents | PDF, DOCX | 5 MB | Yes | Additional context materials |
+| Work Text | Plain text | - | Yes | Existing work descriptions |
+
+## Upload workflow
+
+### Upload RFP document
+
+```bash
+curl -X POST https://api.igad-hub.com/api/proposals/{proposal_id}/documents/upload \
+  -H "Authorization: Bearer YOUR_TOKEN" \
+  -F "file=@rfp-document.pdf"
+```
+
+The RFP document is:
+1. Validated for PDF format (`%PDF` header check)
+2. Stored in S3 at `{proposal_code}/documents/rfp-document/{filename}`
+3. Metadata updated in DynamoDB
+4. Text extracted for analysis (not vectorized)
+
+### Upload concept document
+
+```bash
+curl -X POST https://api.igad-hub.com/api/proposals/{proposal_id}/documents/upload-concept-file \
+  -H "Authorization: Bearer YOUR_TOKEN" \
+  -F "file=@concept.docx"
+```
+
+Concept documents support PDF, DOC, and DOCX formats.
+
+### Save concept text
+
+For text-based concepts:
+
+```bash
+curl -X POST https://api.igad-hub.com/api/proposals/{proposal_id}/documents/save-concept-text \
+  -H "Authorization: Bearer YOUR_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"text": "Climate-smart agriculture project focusing on..."}'
+```
+
+<Note>
+  Concept text is immediately vectorized for AI retrieval. Minimum length: 50 characters.
+</Note>
+
+### Upload reference proposals
+
+```bash
+curl -X POST https://api.igad-hub.com/api/proposals/{proposal_id}/documents/upload-reference-file \
+  -H "Authorization: Bearer YOUR_TOKEN" \
+  -F "file=@reference-proposal.pdf"
+```
+
+Reference proposals are:
+1. Stored in S3
+2. **Asynchronously vectorized** by Lambda worker
+3. Indexed in `reference-proposals-index` for AI retrieval
+
+## Vectorization process
+
+### How vectorization works
+
+Documents marked for vectorization undergo this process:
+
+<Steps>
+  <Step title="Lambda worker triggered">
+    When a file is uploaded, a Lambda worker is invoked asynchronously to handle vectorization.
+  </Step>
+
+  <Step title="Text extraction">
+    Text is extracted from PDF/DOCX using PyPDF2 or python-docx libraries.
+  </Step>
+
+  <Step title="Chunking">
+    Text is split into chunks (1000 characters with 200-character overlap) to maintain context.
+  </Step>
+
+  <Step title="Embedding generation">
+    Each chunk is embedded using Amazon Titan Embed v2 (1024 dimensions).
+  </Step>
+
+  <Step title="Vector storage">
+    Vectors are stored in S3 Express One Zone with metadata:
+    - `proposal_id`
+    - `document_type`
+    - `chunk_index`
+    - `source_filename`
+  </Step>
+</Steps>
+
+### Check vectorization status
+
+```bash
+curl -X GET https://api.igad-hub.com/api/proposals/{proposal_id}/documents/vectorization-status \
+  -H "Authorization: Bearer YOUR_TOKEN"
+```
+
+Response:
+
+```json
+{
+  "reference_proposals": [
+    {
+      "filename": "reference-proposal-2023.pdf",
+      "status": "completed",
+      "vector_count": 45,
+      "completed_at": "2024-01-15T10:30:00Z"
+    },
+    {
+      "filename": "reference-proposal-2024.pdf",
+      "status": "processing",
+      "started_at": "2024-01-15T10:35:00Z"
+    }
+  ],
+  "supporting_documents": [...]
+}
+```
+
+### Vector indexes
+
+The platform maintains separate vector indexes:
+
+- **`reference-proposals-index`**: Vectors from reference proposals
+- **`existing-work-index`**: Vectors from supporting documents and work text
+- **`concept-index`**: Vectors from concept text
+
+These indexes are queried during AI generation to retrieve relevant context.
+
+## Storage architecture
+
+### S3 bucket structure
+
+```
+igad-{environment}-documents/
+└── {proposal_code}/
+    └── documents/
+        ├── rfp-document/
+        │   └── {filename}.pdf
+        ├── concept-document/
+        │   └── {filename}.docx
+        ├── concept-text/
+        │   └── concept-text.txt
+        ├── reference-proposals/
+        │   ├── reference-1.pdf
+        │   └── reference-2.pdf
+        └── supporting-files/
+            ├── supporting-1.pdf
+            └── supporting-2.docx
+```
+
+### S3 vectors bucket
+
+```
+igad-{environment}-vectors/
+└── {proposal_code}/
+    ├── reference-proposals-index/
+    │   └── {filename}/
+    │       ├── chunk-0
+    │       ├── chunk-1
+    │       └── ...
+    └── existing-work-index/
+        └── {filename}/
+            ├── chunk-0
+            └── ...
+```
+
+### DynamoDB storage
+
+Proposal documents are tracked in DynamoDB:
+
+```json
+{
+  "PK": "PROPOSAL#PROP-20240115-A1B2",
+  "SK": "METADATA",
+  "uploaded_files": {
+    "rfp-document": ["rfp-2024.pdf"],
+    "concept-document": ["concept.docx"],
+    "reference-proposals": [
+      "reference-proposal-2023.pdf",
+      "reference-proposal-2024.pdf"
+    ],
+    "supporting-files": ["existing-work.pdf"]
+  },
+  "text_inputs": {
+    "initial-concept": "Climate-smart agriculture project...",
+    "existing-work": "Our organization has implemented..."
+  }
+}
+```
+
+## Document deletion
+
+### Delete uploaded files
+
+```bash
+curl -X DELETE https://api.igad-hub.com/api/proposals/{proposal_id}/documents/rfp-document/{filename} \
+  -H "Authorization: Bearer YOUR_TOKEN"
+```
+
+Deletion process:
+
+1. **S3 file deletion**: File removed from documents bucket
+2. **Vector cleanup**: All vectors for this file removed from vectors bucket
+3. **DynamoDB update**: File removed from `uploaded_files` list
+4. **Analysis cleanup**: Related analysis data cleared (for RFP documents)
+
+<Warning>
+  Deleting an RFP document also clears `rfp_analysis` data and resets workflow progress.
+</Warning>
+
+### Delete concept text
+
+```bash
+curl -X DELETE https://api.igad-hub.com/api/proposals/{proposal_id}/documents/concept-text \
+  -H "Authorization: Bearer YOUR_TOKEN"
+```
+
+Clears concept text from both DynamoDB and vector indexes.
+
+### Delete entire proposal
+
+Deleting a proposal performs comprehensive cleanup:
+
+```bash
+curl -X DELETE https://api.igad-hub.com/api/proposals/{proposal_id} \
+  -H "Authorization: Bearer YOUR_TOKEN"
+```
+
+Cleanup steps:
+
+<Steps>
+  <Step title="Delete vectors">
+    All vectors in `reference-proposals-index` and `existing-work-index` for this proposal are removed.
+  </Step>
+
+  <Step title="Delete S3 files">
+    All files under `{proposal_code}/` are deleted from the documents bucket.
+  </Step>
+
+  <Step title="Delete DynamoDB metadata">
+    The proposal metadata record is removed from the table.
+  </Step>
+</Steps>
+
+Response:
+
+```json
+{
+  "message": "Proposal deleted successfully",
+  "proposal_code": "PROP-20240115-A1B2",
+  "cleanup_summary": {
+    "vectors_deleted": "attempted",
+    "s3_files_deleted": "attempted",
+    "dynamodb_deleted": "completed"
+  }
+}
+```
+
+<Note>
+  Vector and S3 deletion are non-critical. If they fail, DynamoDB deletion still proceeds.
+</Note>
+
+## List documents
+
+### List all documents
+
+```bash
+curl -X GET https://api.igad-hub.com/api/proposals/{proposal_id}/documents \
+  -H "Authorization: Bearer YOUR_TOKEN"
+```
+
+Response:
+
+```json
+{
+  "documents": [
+    {
+      "type": "rfp-document",
+      "filename": "rfp-2024.pdf",
+      "uploaded_at": "2024-01-15T09:00:00Z",
+      "size_bytes": 2457600
+    },
+    {
+      "type": "reference-proposals",
+      "filename": "reference-proposal.pdf",
+      "uploaded_at": "2024-01-15T09:30:00Z",
+      "size_bytes": 1024000,
+      "vectorization_status": "completed"
+    }
+  ]
+}
+```
+
+## File validation
+
+### PDF validation
+
+PDF files are validated by checking the header:
+
+```python
+# From source code
+if not file_content.startswith(b"%PDF"):
+    raise HTTPException(
+        status_code=400,
+        detail="Invalid PDF file. File must start with %PDF header."
+    )
+```
+
+### Size limits
+
+- **RFP/Concept documents**: 10 MB
+- **Reference/Supporting documents**: 5 MB
+- **Text inputs**: No hard limit, but minimum 50 characters for concept text
+
+### Supported MIME types
+
+- `application/pdf`
+- `application/msword` (DOC)
+- `application/vnd.openxmlformats-officedocument.wordprocessingml.document` (DOCX)
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Upload API" icon="upload" href="/api/documents/upload">
+    Complete API reference for document uploads
+  </Card>
+  <Card title="Proposal workflow" icon="list-check" href="/features/proposal-writer">
+    Learn how documents fit into the proposal workflow
+  </Card>
+  <Card title="Architecture" icon="diagram-project" href="/architecture">
+    Understand S3, Lambda, and vector storage architecture
+  </Card>
+  <Card title="Delete API" icon="trash" href="/api/documents/delete">
+    Document deletion and cleanup API
+  </Card>
+</CardGroup>

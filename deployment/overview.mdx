@@ -1,0 +1,251 @@
+---
+title: "Deployment Overview"
+description: "Overview of the IGAD Innovation Hub deployment architecture, environments, and AWS services"
+---
+
+## Introduction
+
+The IGAD Innovation Hub is deployed as a serverless application on AWS using the AWS Serverless Application Model (SAM). The platform consists of a React frontend and Python FastAPI backend, all managed through Infrastructure as Code.
+
+## Deployment Environments
+
+The platform supports two deployment environments:
+
+### Testing Environment
+
+- **Purpose**: Development and testing before production release
+- **Stack Name**: `igad-backend-testing`
+- **Resource Prefix**: `igad-testing-*`
+- **AWS Profile**: `IBD-DEV`
+- **Region**: `us-east-1`
+- **Configuration**: `config/testing.json`
+
+**Testing Environment Settings:**
+
+```json
+{
+  "environment": "testing",
+  "region": "us-east-1",
+  "lambda": {
+    "memorySize": 128,
+    "timeout": 30
+  },
+  "dynamodb": {
+    "billingMode": "ON_DEMAND"
+  },
+  "cloudwatch": {
+    "logRetention": 7
+  }
+}
+```
+
+### Production Environment
+
+- **Purpose**: Live production system
+- **Stack Name**: `igad-backend-production`
+- **Resource Prefix**: `igad-prod-*`
+- **AWS Profile**: `IBD-DEV`
+- **Region**: `us-east-1`
+- **Configuration**: `config/production.json`
+
+**Production Environment Settings:**
+
+```json
+{
+  "environment": "production",
+  "region": "us-east-1",
+  "lambda": {
+    "memorySize": 256,
+    "timeout": 30
+  },
+  "dynamodb": {
+    "billingMode": "ON_DEMAND",
+    "pointInTimeRecovery": true
+  },
+  "cloudwatch": {
+    "logRetention": 30
+  }
+}
+```
+
+## AWS Services Used
+
+The IGAD Innovation Hub leverages the following AWS services:
+
+### Compute & API
+
+| Service | Purpose | Configuration |
+|---------|---------|---------------|
+| **AWS Lambda** | Backend API functions | Python 3.11, ARM64 architecture |
+| **API Gateway** | REST API endpoint | Stage: `prod`, Binary media types supported |
+| **Lambda Web Adapter** | FastAPI to Lambda bridge | Layer ARN: `arn:aws:lambda:us-east-1:753240598075:layer:LambdaAdapterLayerArm64:25` |
+
+**Lambda Functions:**
+
+1. **ApiFunction**
+   - Handler: `bootstrap`
+   - Memory: 512 MB
+   - Timeout: 300 seconds (5 minutes)
+   - Runtime: Python 3.11 on ARM64
+
+2. **AnalysisWorkerFunction**
+   - Handler: `app.tools.proposal_writer.workflow.worker.handler`
+   - Memory: 1024 MB
+   - Timeout: 900 seconds (15 minutes)
+   - Purpose: Async RFP analysis and background processing
+
+### Frontend Distribution
+
+| Service | Purpose | Configuration |
+|---------|---------|---------------|
+| **Amazon S3** | Static website hosting | Private bucket with CloudFront OAC |
+| **Amazon CloudFront** | CDN and global distribution | Custom error pages for SPA routing |
+| **CloudFront Function** | SPA route handling | Rewrites requests to `/index.html` |
+
+### Data Storage
+
+| Service | Purpose | Configuration |
+|---------|---------|---------------|
+| **Amazon DynamoDB** | NoSQL database | Single-table design, on-demand billing |
+| **Amazon S3** | Document storage | Versioned bucket for proposal documents |
+| **S3 Vectors** | Vector embeddings storage | Cosine similarity search, 1024 dimensions |
+
+**DynamoDB Tables:**
+
+- **Testing**: `igad-testing-main-table`
+- **Production**: `igad-prod-main-table` (inferred from pattern)
+
+**S3 Buckets:**
+
+- **Website**: `igad-*-testing/production-websitebucket-*` (auto-generated)
+- **Proposal Documents**: `igad-proposal-documents-${AWS::AccountId}`
+- **Vector Storage**: `igad-proposals-vectors-testing` / `igad-proposals-vectors-production`
+
+### Authentication & Authorization
+
+| Service | Purpose | Configuration |
+|---------|---------|---------------|
+| **Amazon Cognito** | User authentication | User pools with email-based login |
+| **Cognito Groups** | Role-based access control | Admin, Editor, Viewer groups |
+
+**Cognito Pools:**
+
+- **Testing**: `us-east-1_IMi3kSuB8` (User Pool), `7p11hp6gcklhctcr9qffne71vl` (Client)
+- **Production**: Separate pool with stricter password policies
+
+### AI/ML Services
+
+| Service | Purpose | Configuration |
+|---------|---------|---------------|
+| **Amazon Bedrock** | LLM inference | Claude 3 models for AI generation |
+| **Bedrock Knowledge Base** | RAG knowledge retrieval | Knowledge Base ID: `NPDZSLKCYX` |
+
+### Monitoring & Logging
+
+| Service | Purpose | Configuration |
+|---------|---------|---------------|
+| **Amazon CloudWatch** | Logs and metrics | 7-day retention (testing), 30-day (production) |
+| **AWS SES** | Email notifications | Cognito email delivery |
+
+## Architecture Diagram
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                        Users / Clients                       │
+└────────────────────────┬────────────────────────────────────┘
+                         │
+                         ▼
+┌─────────────────────────────────────────────────────────────┐
+│                    Amazon CloudFront                         │
+│              (CDN + CloudFront Function)                     │
+└────────┬────────────────────────────────────┬───────────────┘
+         │                                    │
+         │ /api/*                             │ /*
+         ▼                                    ▼
+┌────────────────────────┐         ┌─────────────────────────┐
+│   API Gateway (prod)   │         │    S3 Website Bucket    │
+└───────┬────────────────┘         │   (React Frontend)      │
+        │                          └─────────────────────────┘
+        ▼
+┌────────────────────────────────────────────────────────────┐
+│              Lambda Functions (Python 3.11)                 │
+│  ┌─────────────────────┐  ┌──────────────────────────┐   │
+│  │   ApiFunction       │  │ AnalysisWorkerFunction   │   │
+│  │   (FastAPI app)     │  │ (Background processing)  │   │
+│  └─────────────────────┘  └──────────────────────────┘   │
+└────────┬───────────────────────────────┬──────────────────┘
+         │                               │
+         ▼                               ▼
+┌─────────────────────────────────────────────────────────────┐
+│                      AWS Resources                           │
+│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐     │
+│  │   DynamoDB   │  │  S3 Buckets  │  │   Cognito    │     │
+│  │  Main Table  │  │  Documents   │  │  User Pools  │     │
+│  └──────────────┘  │  + Vectors   │  └──────────────┘     │
+│                    └──────────────┘                         │
+│                                                              │
+│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐     │
+│  │   Bedrock    │  │  CloudWatch  │  │     SES      │     │
+│  │  Claude AI   │  │     Logs     │  │    Email     │     │
+│  └──────────────┘  └──────────────┘  └──────────────┘     │
+└─────────────────────────────────────────────────────────────┘
+```
+
+## Deployment Strategy
+
+### Recommended Workflow
+
+1. **Test in Testing Environment**
+   - Deploy to `igad-backend-testing`
+   - Verify all functionality
+   - Run integration tests
+   - Review CloudWatch logs
+
+2. **Production Deployment**
+   - Requires manual confirmation
+   - Deploys to `igad-backend-production`
+   - Runs automated tests before deployment
+   - Creates CloudFront cache invalidation
+
+3. **Rollback Strategy**
+   - CloudFormation stack rollback capability
+   - S3 bucket versioning enabled
+   - Lambda function versions maintained
+
+## SAM Configuration
+
+The deployment uses AWS SAM with configuration in `samconfig.toml`:
+
+```toml
+version = 0.1
+[default]
+[default.deploy]
+[default.deploy.parameters]
+stack_name = "igad-backend-testing"
+resolve_s3 = true
+confirm_changeset = false
+capabilities = "CAPABILITY_IAM"
+region = "us-east-1"
+```
+
+## CloudFormation Template
+
+The infrastructure is defined in `template.yaml` using:
+
+- **Transform**: `AWS::Serverless-2016-10-31`
+- **Resources**: Lambda functions, API Gateway, S3 buckets, CloudFront, DynamoDB table references
+- **Outputs**: API endpoints, CloudFront URL, bucket names, function ARNs
+
+## Next Steps
+
+<Card title="Deploy to Testing" icon="flask" href="/deployment/testing">
+  Learn how to deploy to the testing environment
+</Card>
+
+<Card title="Deploy to Production" icon="rocket" href="/deployment/production">
+  Learn how to deploy to production with safety checks
+</Card>
+
+<Card title="Environment Configuration" icon="gear" href="/deployment/environment-config">
+  Configure environment variables and AWS resources
+</Card>

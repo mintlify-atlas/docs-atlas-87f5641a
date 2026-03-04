@@ -1,0 +1,145 @@
+---
+title: "Delete Proposal"
+api: "DELETE /api/proposals/{proposal_id}"
+description: "Permanently delete a proposal and all associated resources including S3 files, vectors, and DynamoDB records."
+---
+
+## Authentication
+
+This endpoint requires authentication via Bearer token.
+
+```bash
+Authorization: Bearer <token>
+```
+
+## Path Parameters
+
+<ParamField path="proposal_id" type="string" required>
+  The proposal identifier. Can be either:
+  - UUID format: `a1b2c3d4-e5f6-7890-abcd-ef1234567890`
+  - Proposal code format: `PROP-20260304-A1B2`
+</ParamField>
+
+## Response
+
+<ResponseField name="message" type="string">
+  Confirmation message indicating successful deletion.
+</ResponseField>
+
+<ResponseField name="proposal_code" type="string">
+  The proposal code of the deleted proposal.
+</ResponseField>
+
+<ResponseField name="cleanup_summary" type="object">
+  Summary of cleanup operations performed.
+  
+  <Expandable title="Cleanup Summary Fields">
+    <ResponseField name="vectors_deleted" type="string">
+      Status of vector deletion ("attempted" or "completed").
+    </ResponseField>
+    
+    <ResponseField name="s3_files_deleted" type="string">
+      Status of S3 file deletion ("attempted" or "completed").
+    </ResponseField>
+    
+    <ResponseField name="dynamodb_deleted" type="string">
+      Status of DynamoDB record deletion ("completed").
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+## Example Requests
+
+<CodeGroup>
+
+```bash By UUID
+curl -X DELETE https://api.igadregion.org/api/proposals/a1b2c3d4-e5f6-7890-abcd-ef1234567890 \
+  -H "Authorization: Bearer YOUR_TOKEN"
+```
+
+```bash By Proposal Code
+curl -X DELETE https://api.igadregion.org/api/proposals/PROP-20260304-A1B2 \
+  -H "Authorization: Bearer YOUR_TOKEN"
+```
+
+</CodeGroup>
+
+## Response Example
+
+```json
+{
+  "message": "Proposal deleted successfully",
+  "proposal_code": "PROP-20260304-A1B2",
+  "cleanup_summary": {
+    "vectors_deleted": "attempted",
+    "s3_files_deleted": "attempted",
+    "dynamodb_deleted": "completed"
+  }
+}
+```
+
+## Error Responses
+
+<ResponseField name="404 Not Found" type="error">
+  ```json
+  {
+    "detail": "Proposal not found"
+  }
+  ```
+  The proposal with the specified ID does not exist.
+</ResponseField>
+
+<ResponseField name="403 Forbidden" type="error">
+  ```json
+  {
+    "detail": "Access denied"
+  }
+  ```
+  The proposal belongs to a different user.
+</ResponseField>
+
+## Deletion Process
+
+When you delete a proposal, the system performs the following cleanup operations:
+
+### 1. Vector Embeddings Deletion
+Deletes all vector embeddings associated with the proposal from the S3 vector store. This includes:
+- Document embeddings
+- Semantic search indices
+- Reference proposal embeddings
+
+### 2. S3 Files Deletion
+Deletes all files stored in S3 under the proposal's folder, including:
+- RFP documents
+- Concept documents
+- Reference proposals
+- Generated documents
+- Analysis results
+
+All files under the prefix `{proposal_code}/` are removed from the S3 bucket.
+
+### 3. DynamoDB Metadata Deletion
+Removes the proposal's metadata record from DynamoDB, including:
+- Basic proposal information
+- Analysis results
+- Processing status
+- User associations
+
+## Notes
+
+<Warning>
+  **Permanent Deletion**: This operation is irreversible. Once deleted, the proposal and all associated data cannot be recovered.
+</Warning>
+
+- **Access Control**: Users can only delete their own proposals. Attempting to delete another user's proposal returns a 403 error.
+- **Flexible ID Format**: You can use either the UUID or the proposal code (PROP-20260304-A1B2) to identify the proposal.
+- **Complete Cleanup**: The endpoint ensures all associated resources are cleaned up across S3, vector store, and DynamoDB.
+- **Non-Critical Errors**: Vector and S3 deletion failures are logged but don't prevent the operation from completing. The DynamoDB deletion always succeeds.
+- **Resource Status**: The `cleanup_summary` shows "attempted" for S3 and vector operations (which may fail gracefully) and "completed" for the guaranteed DynamoDB deletion.
+
+## Best Practices
+
+1. **Confirmation**: Implement a confirmation dialog in your UI before calling this endpoint.
+2. **Error Handling**: Handle 404 errors gracefully (proposal may have already been deleted).
+3. **User Feedback**: Show the cleanup summary to users to confirm which resources were removed.
+4. **Audit Trail**: Consider logging deletion requests for audit purposes before calling this endpoint.

@@ -1,0 +1,351 @@
+---
+title: 'Generate Proposal Template'
+api: 'POST /api/proposals/{proposal_id}/generate-proposal-template'
+---
+
+## Overview
+
+Generates a Word (.docx) template document from the structure and workplan analysis. This endpoint creates a downloadable template with sections, guidance, and space for writing content.
+
+<Info>
+  This endpoint generates a **blank template** with structure and guidance. For an AI-generated draft with pre-filled content, use `/generate-ai-proposal-template` instead.
+</Info>
+
+<Warning>
+  **Prerequisites**:
+  - RFP analysis must be completed (Step 1)
+  - Structure and workplan analysis must be completed (Step 3)
+  - Concept document must be generated (Step 2)
+</Warning>
+
+## Request
+
+<ParamField path="proposal_id" type="string" required>
+  The proposal ID or code (format: `PROP-YYYYMMDD-XXXX`)
+</ParamField>
+
+<ParamField body="selected_sections" type="array">
+  Optional list of section titles to include. If not provided or empty, all sections from the structure analysis will be included.
+  
+  Example: `["Executive Summary", "Technical Approach", "Budget"]`
+</ParamField>
+
+<ParamField body="user_comments" type="object">
+  Optional dictionary mapping section titles to user comments. Comments will be displayed in blue italic text in the document.
+  
+  Example: `{"Technical Approach": "Focus on cloud-native architecture"}`
+</ParamField>
+
+## Response
+
+Returns a **streamable Word document** (`.docx` file) with:
+
+- **Content-Type**: `application/vnd.openxmlformats-officedocument.wordprocessingml.document`
+- **Content-Disposition**: `attachment; filename=proposal_template_{proposal_code}.docx`
+
+<ResponseField name="Binary Data" type="file">
+  Word document binary stream
+</ResponseField>
+
+## Example Request
+
+```bash
+curl -X POST "https://api.igad-innovation.org/api/proposals/PROP-20260304-A1B2/generate-proposal-template" \
+  -H "Authorization: Bearer YOUR_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "selected_sections": [
+      "Executive Summary",
+      "Problem Statement",
+      "Technical Approach",
+      "Work Plan",
+      "Budget"
+    ],
+    "user_comments": {
+      "Technical Approach": "Please emphasize sustainability and scalability"
+    }
+  }' \
+  --output proposal_template.docx
+```
+
+## JavaScript/TypeScript Example
+
+```typescript
+const generateTemplate = async (
+  proposalId: string,
+  selectedSections: string[],
+  userComments?: Record<string, string>
+) => {
+  const response = await fetch(
+    `/api/proposals/${proposalId}/generate-proposal-template`,
+    {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        selected_sections: selectedSections,
+        user_comments: userComments
+      })
+    }
+  )
+
+  if (!response.ok) {
+    throw new Error('Failed to generate template')
+  }
+
+  // Download the file
+  const blob = await response.blob()
+  const url = window.URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `proposal_template_${proposalId}.docx`
+  document.body.appendChild(a)
+  a.click()
+  window.URL.revokeObjectURL(url)
+  document.body.removeChild(a)
+}
+```
+
+## Generated Document Structure
+
+The Word template includes:
+
+### Document Header
+- **Proposal Title**: From proposal metadata
+- **Proposal Code**: PROP-YYYYMMDD-XXXX
+- **Date Generated**: Current date
+
+### Narrative Overview
+A text summary from the structure workplan analysis explaining the overall approach.
+
+### Each Section Contains
+
+1. **Section Title**: Formatted as heading
+2. **Purpose**: Why this section is important
+3. **Guidance**: What to include in the section
+4. **Key Questions**: Prompts to guide writing
+5. **User Comments** (if provided): Displayed in blue italic text
+6. **Writing Space**: Blank space for user to add content
+
+### Example Section Format
+
+```
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Technical Approach
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Purpose:
+Describe your technical solution and implementation strategy.
+
+Guidance:
+• Explain your chosen technology stack
+• Describe system architecture
+• Outline implementation phases
+• Address scalability and security
+
+Key Questions to Address:
+• What technologies will you use and why?
+• How will the system handle growth?
+• What are the technical risks and mitigations?
+
+User Note:
+Please emphasize sustainability and scalability
+
+[Space for your response]
+```
+
+## Service Implementation
+
+The template is generated using the `ProposalTemplateGenerator` service:
+
+```python
+from app.tools.proposal_writer.proposal_template_generation.service import (
+    ProposalTemplateGenerator
+)
+
+service = ProposalTemplateGenerator()
+buffer = service.generate_template(
+    proposal_code=proposal_code,
+    selected_sections=request.selected_sections or [],
+    rfp_analysis=proposal.get("rfp_analysis"),
+    concept_document=proposal.get("concept_document_v2"),
+    structure_workplan_analysis=proposal.get("structure_workplan_analysis"),
+    reference_proposals_analysis=proposal.get("reference_proposals_analysis"),
+    existing_work_analysis=proposal.get("existing_work_analysis"),
+    user_comments=request.user_comments
+)
+```
+
+### Input Data Sources
+
+The generator pulls data from multiple analysis steps:
+
+| Analysis Type | Used For |
+|---------------|----------|
+| RFP Analysis | Requirements, evaluation criteria |
+| Concept Document | Project overview, initial approach |
+| Structure Workplan | Section titles, guidance, questions |
+| Reference Proposals | Best practice examples |
+| Existing Work | Organizational context |
+
+## Error Handling
+
+### Status Code 400 - Missing Structure Analysis
+
+```json
+{
+  "detail": "Structure and workplan analysis must be completed before generating template."
+}
+```
+
+### Status Code 400 - Missing RFP Analysis
+
+```json
+{
+  "detail": "RFP analysis must be completed before generating template."
+}
+```
+
+### Status Code 400 - Missing Concept Document
+
+```json
+{
+  "detail": "Concept document must be generated before generating template."
+}
+```
+
+### Status Code 403
+
+```json
+{
+  "detail": "Access denied"
+}
+```
+
+### Status Code 404
+
+```json
+{
+  "detail": "Proposal not found"
+}
+```
+
+### Status Code 500
+
+```json
+{
+  "detail": "Failed to generate template: [error details]"
+}
+```
+
+## Section Selection
+
+Users can choose which sections to include:
+
+### Include All Sections (Default)
+
+```json
+{
+  "selected_sections": []
+}
+```
+
+Or omit the field entirely:
+
+```json
+{}
+```
+
+### Include Specific Sections
+
+```json
+{
+  "selected_sections": [
+    "Executive Summary",
+    "Problem Statement",
+    "Proposed Solution",
+    "Budget"
+  ]
+}
+```
+
+<Note>
+  Section titles must match **exactly** with titles in the structure workplan analysis. Mismatched titles will be ignored.
+</Note>
+
+## User Comments Feature
+
+Add custom guidance for each section:
+
+```json
+{
+  "selected_sections": [
+    "Technical Approach",
+    "Sustainability Plan"
+  ],
+  "user_comments": {
+    "Technical Approach": "Emphasize open-source technologies and local capacity building",
+    "Sustainability Plan": "Reference the government's Digital Transformation Strategy 2030"
+  }
+}
+```
+
+### Comment Display
+
+Comments appear in the document as:
+
+```
+💡 User Note:
+Emphasize open-source technologies and local capacity building
+```
+
+Formatted with:
+- Blue text color
+- Italic style
+- Indented for visibility
+
+## Comparison: Template vs AI-Generated Draft
+
+| Feature | Template (This Endpoint) | AI Draft (`/generate-ai-proposal-template`) |
+|---------|-------------------------|--------------------------------------------|
+| Content | Empty sections with guidance | Pre-filled with AI-generated content |
+| Generation Time | Instant (under 1 second) | 2-5 minutes (async) |
+| User Control | User writes all content | AI generates, user edits |
+| Best For | Experienced writers | Quick first drafts |
+| File Format | Word (.docx) | Markdown (convertible to .docx) |
+
+## Next Steps
+
+After downloading the template:
+
+1. **Open in Word**: Edit the document offline
+2. **Fill Sections**: Replace placeholder text with your content
+3. **Upload as Draft**: Upload completed document for feedback analysis
+
+<Card title="POST /api/proposals/{proposal_id}/upload-draft-proposal" icon="upload" href="/api/proposals/upload-draft">
+  Upload your completed draft for AI feedback
+</Card>
+
+## Alternative: AI-Generated Draft
+
+If you prefer AI to generate initial content:
+
+<Card title="POST /api/proposals/{proposal_id}/generate-ai-proposal-template" icon="wand-magic-sparkles" href="/api/proposals/generate-ai-template">
+  Generate AI-powered draft with pre-filled sections
+</Card>
+
+## Best Practices
+
+<Tip>
+  **Select strategically**: If you only need 3-4 sections, specify `selected_sections` to create a focused template instead of a 20-page document.
+</Tip>
+
+<Check>
+  **Use comments for team coordination**: Add user comments to communicate priorities or constraints to team members writing specific sections.
+</Check>
+
+<Warning>
+  **Document expires**: The generated template is streamed and not stored. Bookmark the API call or save the file immediately.
+</Warning>

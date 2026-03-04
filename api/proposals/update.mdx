@@ -1,0 +1,246 @@
+---
+title: "Update Proposal"
+api: "PUT /api/proposals/{proposal_id}"
+description: "Update an existing proposal's title, description, status, uploaded files, text inputs, or metadata."
+---
+
+## Authentication
+
+This endpoint requires authentication via Bearer token.
+
+```bash
+Authorization: Bearer <token>
+```
+
+## Path Parameters
+
+<ParamField path="proposal_id" type="string" required>
+  The proposal identifier. Can be either:
+  - UUID format: `a1b2c3d4-e5f6-7890-abcd-ef1234567890`
+  - Proposal code format: `PROP-20260304-A1B2`
+</ParamField>
+
+## Request Body
+
+All fields are optional. Only provide the fields you want to update.
+
+<ParamField body="title" type="string">
+  New title for the proposal.
+</ParamField>
+
+<ParamField body="description" type="string">
+  New description for the proposal.
+</ParamField>
+
+<ParamField body="status" type="string">
+  New status for the proposal (e.g., "draft", "submitted", "completed").
+</ParamField>
+
+<ParamField body="uploaded_files" type="object">
+  Dictionary of uploaded files organized by category.
+  
+  Common categories:
+  - `rfp-document`: Array of RFP document URLs
+  - `concept-document`: Array of concept document URLs
+  - `reference-proposals`: Array of reference proposal URLs
+  
+  Example:
+  ```json
+  {
+    "rfp-document": ["s3://bucket/proposal/rfp.pdf"],
+    "reference-proposals": ["s3://bucket/proposal/ref1.pdf", "s3://bucket/proposal/ref2.pdf"]
+  }
+  ```
+</ParamField>
+
+<ParamField body="text_inputs" type="object">
+  Dictionary of text inputs provided by the user.
+  
+  Common keys:
+  - `initial-concept`: User's initial concept text
+  
+  Example:
+  ```json
+  {
+    "initial-concept": "This project aims to improve climate resilience..."
+  }
+  ```
+</ParamField>
+
+<ParamField body="metadata" type="object">
+  Additional metadata for the proposal. This can include custom fields, analysis results, or processing flags.
+  
+  Example:
+  ```json
+  {
+    "custom_field": "value",
+    "processing_notes": "Additional information"
+  }
+  ```
+</ParamField>
+
+## Response
+
+Returns the updated proposal object with all current fields.
+
+<ResponseField name="id" type="string">
+  Unique proposal identifier (UUID).
+</ResponseField>
+
+<ResponseField name="proposalCode" type="string">
+  Human-readable proposal code (format: PROP-YYYYMMDD-XXXX).
+</ResponseField>
+
+<ResponseField name="title" type="string">
+  The updated title of the proposal.
+</ResponseField>
+
+<ResponseField name="description" type="string">
+  The updated description of the proposal.
+</ResponseField>
+
+<ResponseField name="status" type="string">
+  The updated status of the proposal.
+</ResponseField>
+
+<ResponseField name="created_at" type="string">
+  ISO 8601 timestamp of when the proposal was created (unchanged).
+</ResponseField>
+
+<ResponseField name="updated_at" type="string">
+  ISO 8601 timestamp of the update (automatically set to current time).
+</ResponseField>
+
+<ResponseField name="user_id" type="string">
+  The ID of the user who owns the proposal.
+</ResponseField>
+
+<ResponseField name="user_email" type="string">
+  The email of the user who owns the proposal.
+</ResponseField>
+
+<ResponseField name="user_name" type="string">
+  The name of the user who owns the proposal.
+</ResponseField>
+
+<ResponseField name="uploaded_files" type="object">
+  The updated dictionary of uploaded files.
+</ResponseField>
+
+<ResponseField name="text_inputs" type="object">
+  The updated dictionary of text inputs.
+</ResponseField>
+
+<ResponseField name="metadata" type="object">
+  The updated metadata object.
+</ResponseField>
+
+## Example Requests
+
+<CodeGroup>
+
+```bash Update Title and Description
+curl -X PUT https://api.igadregion.org/api/proposals/PROP-20260304-A1B2 \
+  -H "Authorization: Bearer YOUR_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "title": "Updated Climate Resilience Project",
+    "description": "Enhanced proposal for climate adaptation with new focus areas"
+  }'
+```
+
+```bash Update Status
+curl -X PUT https://api.igadregion.org/api/proposals/a1b2c3d4-e5f6-7890-abcd-ef1234567890 \
+  -H "Authorization: Bearer YOUR_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "status": "submitted"
+  }'
+```
+
+```bash Update Uploaded Files
+curl -X PUT https://api.igadregion.org/api/proposals/PROP-20260304-A1B2 \
+  -H "Authorization: Bearer YOUR_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "uploaded_files": {
+      "rfp-document": ["s3://bucket/PROP-20260304-A1B2/rfp_v2.pdf"],
+      "concept-document": ["s3://bucket/PROP-20260304-A1B2/concept.pdf"],
+      "reference-proposals": [
+        "s3://bucket/PROP-20260304-A1B2/ref1.pdf",
+        "s3://bucket/PROP-20260304-A1B2/ref2.pdf"
+      ]
+    }
+  }'
+```
+
+```bash Update Text Inputs
+curl -X PUT https://api.igadregion.org/api/proposals/PROP-20260304-A1B2 \
+  -H "Authorization: Bearer YOUR_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "text_inputs": {
+      "initial-concept": "This project aims to build climate resilience across East Africa by implementing adaptive strategies in agriculture and water management."
+    }
+  }'
+```
+
+</CodeGroup>
+
+## Response Example
+
+```json
+{
+  "id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+  "proposalCode": "PROP-20260304-A1B2",
+  "title": "Updated Climate Resilience Project",
+  "description": "Enhanced proposal for climate adaptation with new focus areas",
+  "template_id": null,
+  "status": "draft",
+  "created_at": "2026-03-04T10:30:00.000Z",
+  "updated_at": "2026-03-04T16:20:00.000Z",
+  "user_id": "user_123",
+  "user_email": "user@example.com",
+  "user_name": "John Doe",
+  "uploaded_files": {
+    "rfp-document": ["s3://bucket/PROP-20260304-A1B2/rfp.pdf"],
+    "concept-document": ["s3://bucket/PROP-20260304-A1B2/concept.pdf"]
+  },
+  "text_inputs": {
+    "initial-concept": "Brief description of the project concept..."
+  },
+  "metadata": {
+    "rfp_analysis_status": "completed",
+    "concept_analysis_status": "processing"
+  }
+}
+```
+
+## Error Responses
+
+<ResponseField name="404 Not Found" type="error">
+  ```json
+  {
+    "detail": "Proposal not found"
+  }
+  ```
+  The proposal with the specified ID does not exist.
+</ResponseField>
+
+<ResponseField name="403 Forbidden" type="error">
+  ```json
+  {
+    "detail": "Access denied"
+  }
+  ```
+  The proposal belongs to a different user.
+</ResponseField>
+
+## Notes
+
+- **Partial Updates**: You only need to include the fields you want to update. All other fields will remain unchanged.
+- **Automatic Timestamp**: The `updated_at` field is automatically set to the current timestamp on every update.
+- **Access Control**: Users can only update their own proposals.
+- **Flexible ID Format**: You can use either the UUID or the proposal code (PROP-YYYYMMDD-XXXX) to identify the proposal.
+- **Empty Update**: If you send an empty request body or only fields that are not set, the endpoint returns the current proposal without making changes.
+- **Metadata Merging**: The `metadata` field is replaced entirely with the new value provided, not merged. To preserve existing metadata, retrieve it first and include all fields in your update.

@@ -1,0 +1,469 @@
+---
+title: "Testing Environment Deployment"
+description: "Deploy the IGAD Innovation Hub to the testing environment for validation and QA"
+---
+
+## Prerequisites
+
+Before deploying to the testing environment, ensure you have:
+
+<Check>AWS CLI installed and configured with the `IBD-DEV` profile</Check>
+<Check>AWS SAM CLI installed (`brew install aws-sam-cli` or equivalent)</Check>
+<Check>Node.js and npm installed for frontend builds</Check>
+<Check>Python 3.11 and pip3 installed for backend</Check>
+<Check>Docker installed (for SAM containerized builds)</Check>
+<Check>AWS credentials configured for `us-east-1` region</Check>
+
+## Validate AWS Configuration
+
+Before deployment, verify your AWS configuration:
+
+```bash
+# Check AWS profile
+aws configure get profile
+# Should output: IBD-DEV
+
+# Check AWS region
+aws configure get region --profile IBD-DEV
+# Should output: us-east-1
+
+# Set profile if needed
+export AWS_PROFILE=IBD-DEV
+aws configure set region us-east-1 --profile IBD-DEV
+```
+
+## Deployment Scripts
+
+The IGAD Innovation Hub provides several deployment scripts located in `igad-app/scripts/`:
+
+### Full Stack Deployment
+
+**Script**: `deploy-fullstack-testing.sh`
+
+Deploys both frontend and backend to the testing environment.
+
+```bash
+cd igad-app
+./scripts/deploy-fullstack-testing.sh
+```
+
+**What it does:**
+
+1. Validates AWS profile (`IBD-DEV`) and region (`us-east-1`)
+2. Sets up S3 Vectors infrastructure (buckets and indexes)
+3. Builds React frontend (`npm install && npm run build`)
+4. Builds Python backend (copies to `dist/`, installs dependencies)
+5. Runs SAM build (local ARM64 build, faster on ARM Macs)
+6. Deploys backend stack (`igad-backend-testing`)
+7. Finds S3 website bucket and CloudFront distribution dynamically
+8. Uploads frontend to S3
+9. Invalidates CloudFront cache
+
+**Output resources:**
+- DynamoDB: `igad-testing-main-table`
+- Cognito: `us-east-1_EULeelICj`
+- Documents: `igad-proposal-documents-${AWS::AccountId}`
+- Vectors: `igad-proposals-vectors-testing`
+
+### Deployment Options
+
+The fullstack script supports selective deployment:
+
+#### Frontend Only
+
+```bash
+./scripts/deploy-fullstack-testing.sh --frontend-only
+```
+
+Skips backend build and deployment. Useful when only React code changed.
+
+#### Backend Only
+
+```bash
+./scripts/deploy-fullstack-testing.sh --backend-only
+```
+
+Skips frontend build and upload. Useful when only Python code changed.
+
+#### Alternative Backend-Only Script
+
+```bash
+./scripts/deploy-backend-only.sh
+```
+
+Dedicated script for backend-only deployments:
+
+```bash
+#!/bin/bash
+set -e
+
+# Validates AWS profile and region
+export AWS_PROFILE=IBD-DEV
+
+# Build backend
+rm -rf backend/dist
+mkdir -p backend/dist
+cp -r backend/app backend/dist/
+cp backend/requirements.txt backend/dist/
+cp backend/bootstrap backend/dist/
+cp backend/.env backend/dist/
+
+# Deploy with SAM
+sam build --use-container
+sam deploy --stack-name igad-backend-testing --profile IBD-DEV --region us-east-1
+```
+
+## S3 Vectors Infrastructure Setup
+
+The deployment automatically sets up S3 Vectors for document embeddings:
+
+**Script**: Embedded Python in `deploy-fullstack-testing.sh`
+
+```python
+import boto3
+
+s3vectors = boto3.client('s3vectors', region_name='us-east-1')
+bucket_name = "igad-proposals-vectors-testing"
+
+# Create vector bucket
+s3vectors.create_vector_bucket(
+    vectorBucketName=bucket_name,
+    encryptionConfiguration={'sseType': 'AES256'}
+)
+
+# Create indexes
+indexes = [
+    {'name': 'reference-proposals-index'},
+    {'name': 'existing-work-index'}
+]
+
+for idx in indexes:
+    s3vectors.create_index(
+        vectorBucketName=bucket_name,
+        indexName=idx['name'],
+        dataType='float32',
+        dimension=1024,
+        distanceMetric='cosine',
+        metadataConfiguration={
+            'nonFilterableMetadataKeys': ['source_text', 'document_name', 'upload_date']
+        }
+    )
+```
+
+**Manual Setup** (if needed):
+
+```bash
+python3 scripts/setup-s3-vectors.py
+```
+
+See `scripts/setup-s3-vectors.py:1` for full implementation.
+
+## Legacy Deployment Scripts
+
+### Basic Testing Deployment
+
+**Script**: `deploy-testing.sh` (older version)
+
+```bash
+./scripts/deploy-testing.sh
+```
+
+**Differences from fullstack script:**
+- Uses `sam build --use-container` (slower but more compatible)
+- Finds S3 bucket and CloudFront distribution dynamically
+- Does not include S3 Vectors setup
+
+### Simple Deployment Script
+
+**Script**: `deploy.sh` (basic version)
+
+```bash
+./scripts/deploy.sh
+```
+
+Simple SAM deployment without frontend handling.
+
+## Cognito Setup
+
+For initial testing environment setup, configure Cognito:
+
+**Script**: `setup-cognito.sh`
+
+```bash
+./scripts/setup-cognito.sh
+```
+
+See `scripts/setup-cognito.sh:1`
+
+**What it does:**
+
+1. Validates AWS profile and region
+2. Creates Cognito User Pool (`igad-testing-user-pool`)
+3. Configures password policy (8 chars, uppercase, lowercase, numbers)
+4. Sets email as username attribute
+5. Creates User Pool Client
+6. Generates `backend/.env` file with credentials
+
+**Generated `.env` file:**
+
+```bash
+# AWS Configuration
+AWS_REGION=us-east-1
+AWS_PROFILE=IBD-DEV
+
+# Cognito Configuration
+COGNITO_USER_POOL_ID=us-east-1_IMi3kSuB8
+COGNITO_CLIENT_ID=7p11hp6gcklhctcr9qffne71vl
+
+# Application Configuration
+ENVIRONMENT=testing
+LOG_LEVEL=INFO
+```
+
+## Deployment Process Walkthrough
+
+Here's what happens during a full testing deployment:
+
+### Step 1: Pre-flight Checks
+
+```bash
+✅ AWS profile and region validated
+✅ Project structure validated
+```
+
+### Step 2: S3 Vectors Infrastructure
+
+```bash
+🎯 Setting up S3 Vectors Infrastructure...
+✅ Vector bucket 'igad-proposals-vectors-testing' exists
+✅ Index 'reference-proposals-index' exists
+✅ Index 'existing-work-index' exists
+✅ S3 Vectors ready
+```
+
+### Step 3: Frontend Build
+
+```bash
+🔨 Building frontend...
+> npm install
+> npm run build
+```
+
+### Step 4: Backend Build
+
+```bash
+🔨 Building backend...
+📦 Copying source files to dist...
+```
+
+Backend files copied to `backend/dist/`:
+- `app/` (Python source)
+- `requirements.txt`
+- `bootstrap` (Lambda Web Adapter script)
+- `.env` (if exists)
+
+### Step 5: SAM Build
+
+```bash
+🚀 Deploying backend...
+sam build --skip-pull-image
+```
+
+Builds Lambda deployment packages using local Docker images.
+
+### Step 6: SAM Deploy
+
+```bash
+sam deploy --stack-name igad-backend-testing
+```
+
+Uses configuration from `samconfig.toml:1`
+
+**CloudFormation stack operations:**
+- Creates/updates Lambda functions
+- Configures API Gateway
+- Sets up S3 buckets
+- Creates CloudFront distribution
+- Configures IAM roles and policies
+
+### Step 7: Frontend Upload
+
+```bash
+🔍 Finding S3 bucket for testing environment...
+📤 S3 Bucket: igad-testing-websitebucket-abc123
+📤 Uploading frontend to S3...
+aws s3 sync frontend/dist/ s3://${BUCKET_NAME} --delete
+```
+
+### Step 8: CloudFront Invalidation
+
+```bash
+🔍 Finding CloudFront distribution for S3 bucket...
+📤 CloudFront Distribution ID: E1234567890ABC
+🔄 Invalidating CloudFront cache...
+✅ CloudFront invalidation created: I1234567890ABC
+```
+
+Invalidates all paths (`/*`) to ensure users get the latest frontend.
+
+### Step 9: Deployment Complete
+
+```bash
+🎉 Deployment completed successfully!
+
+✅ Testing deployment completed!
+📋 Resources:
+   - Frontend: CloudFront Distribution
+   - Backend: Lambda + API Gateway
+   - Database: DynamoDB (igad-testing-main-table)
+   - Auth: Cognito (us-east-1_EULeelICj)
+   - Documents: S3 (igad-proposal-documents-${AWS::AccountId})
+
+📝 Note: S3 Vector bucket is commented out in template.yaml
+```
+
+## Verifying the Deployment
+
+### Check CloudFormation Stack
+
+```bash
+aws cloudformation describe-stacks \
+  --stack-name igad-backend-testing \
+  --profile IBD-DEV \
+  --query 'Stacks[0].Outputs'
+```
+
+**Expected outputs:**
+- `ApiEndpoint`: API Gateway URL
+- `FunctionArn`: Main Lambda function ARN
+- `CloudFrontURL`: Frontend distribution URL
+- `WebsiteBucket`: S3 bucket name
+- `ProposalDocumentsBucket`: Documents bucket name
+
+### Test API Health
+
+```bash
+curl https://<api-gateway-id>.execute-api.us-east-1.amazonaws.com/prod/api/health
+```
+
+**Expected response:**
+
+```json
+{
+  "status": "healthy",
+  "environment": "testing",
+  "timestamp": "2026-03-04T12:00:00Z"
+}
+```
+
+### Test Frontend
+
+Open the CloudFront URL in a browser:
+
+```bash
+https://<distribution-id>.cloudfront.net
+```
+
+Verify:
+- React app loads
+- Login page appears
+- No console errors
+
+### Check Lambda Logs
+
+```bash
+aws logs tail /aws/lambda/igad-backend-testing-ApiFunction \
+  --follow \
+  --profile IBD-DEV
+```
+
+## Troubleshooting
+
+### SAM Build Fails
+
+**Error**: Docker not running
+
+```
+Error: Cannot connect to Docker daemon
+```
+
+**Solution**: Start Docker Desktop or use `--skip-pull-image`:
+
+```bash
+sam build --skip-pull-image
+```
+
+### CloudFront Cache Issues
+
+**Problem**: Changes not visible after deployment
+
+**Solution**: Wait for invalidation to complete (2-5 minutes) or check status:
+
+```bash
+aws cloudfront get-invalidation \
+  --distribution-id E1234567890ABC \
+  --id I1234567890ABC \
+  --profile IBD-DEV
+```
+
+### S3 Bucket Not Found
+
+**Error**: Could not find S3 bucket for testing environment
+
+**Solution**: Verify CloudFormation stack created the bucket:
+
+```bash
+aws s3 ls --profile IBD-DEV | grep igad.*testing
+```
+
+### Lambda Function Timeout
+
+**Error**: Task timed out after 300.00 seconds
+
+**Solution**: Increase timeout in `template.yaml:29` and redeploy:
+
+```yaml
+Timeout: 600  # 10 minutes
+```
+
+## CI/CD Integration
+
+To integrate testing deployment into CI/CD:
+
+```yaml
+# .github/workflows/deploy-testing.yml
+name: Deploy to Testing
+
+on:
+  push:
+    branches:
+      - develop
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v2
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-1
+      
+      - name: Deploy to testing
+        run: |
+          cd igad-app
+          ./scripts/deploy-fullstack-testing.sh
+```
+
+## Next Steps
+
+<Card title="Production Deployment" icon="rocket" href="/deployment/production">
+  Deploy to production with safety checks and confirmation
+</Card>
+
+<Card title="Environment Configuration" icon="gear" href="/deployment/environment-config">
+  Configure environment variables and AWS resources
+</Card>

@@ -1,97 +1,195 @@
 ---
-title: "Introduction"
-description: "Welcome to the new home for your documentation"
+title: Alliance IGAD Innovation Hub
+description: AI-powered platform for proposal writing and administrative prompt management
+mode: custom
 ---
 
-## Setting up
+<div className="relative overflow-hidden bg-gradient-to-br from-[#2563eb] via-[#1e40af] to-[#1e3a8a] dark:from-[#1e40af] dark:via-[#1e3a8a] dark:to-[#172554] py-20">
+  <div className="absolute inset-0 bg-[url('/grid.svg')] bg-center opacity-10"></div>
+  <div className="relative max-w-7xl mx-auto px-6 sm:px-8 lg:px-12">
+    <div className="grid lg:grid-cols-12 gap-8 items-center">
+      <div className="lg:col-span-7">
+        <h1 className="text-4xl sm:text-5xl lg:text-6xl font-bold text-white mb-6">
+          AI-Powered Proposal Writing Platform
+        </h1>
+        <p className="text-lg sm:text-xl text-blue-100 max-w-2xl mb-8">
+          Transform your RFP response process with intelligent document analysis, AI-driven concept generation, and automated proposal structuring—all built on serverless AWS infrastructure.
+        </p>
+        <div className="flex flex-wrap gap-4">
+          <a
+            href="/quickstart"
+            className="inline-flex items-center px-6 py-3 rounded-lg bg-white text-[#2563eb] font-semibold hover:bg-blue-50 transition-colors"
+          >
+            Get Started
+            <svg className="ml-2 w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7l5 5m0 0l-5 5m5-5H6" />
+            </svg>
+          </a>
+          <a
+            href="/api/proposals/create"
+            className="inline-flex items-center px-6 py-3 rounded-lg border border-white/30 bg-white/10 text-white font-semibold hover:bg-white/20 transition-colors"
+          >
+            Explore API
+          </a>
+        </div>
+      </div>
+      <div className="lg:col-span-5 hidden lg:block">
+        <div className="relative">
+          <div className="absolute inset-0 bg-gradient-to-tr from-blue-400/20 to-blue-600/20 blur-3xl"></div>
+          <div className="relative bg-white/10 backdrop-blur-sm rounded-2xl border border-white/20 p-6">
+            <div className="space-y-3">
+              <div className="h-3 bg-white/30 rounded w-3/4"></div>
+              <div className="h-3 bg-white/20 rounded w-full"></div>
+              <div className="h-3 bg-white/20 rounded w-5/6"></div>
+              <div className="mt-6 space-y-2">
+                <div className="h-2 bg-blue-300/40 rounded w-full"></div>
+                <div className="h-2 bg-blue-300/40 rounded w-4/5"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
 
-Get your documentation site up and running in minutes.
+<div className="mt-16 mb-16 max-w-5xl mx-auto px-6">
+  <div className="text-center mb-12">
+    <h2 className="text-2xl sm:text-3xl font-bold text-gray-900 dark:text-white mb-4">
+      Get Started in Minutes
+    </h2>
+    <p className="text-base text-gray-600 dark:text-gray-400 max-w-2xl mx-auto">
+      Follow these steps to create your first AI-powered proposal
+    </p>
+  </div>
 
-<Card
-  title="Start here"
-  icon="rocket"
-  href="/quickstart"
-  horizontal
->
-  Follow our three step quickstart guide.
-</Card>
+  <Steps>
+    <Step title="Set up your account">
+      Sign up for the IGAD Innovation Hub and configure your AWS credentials. The platform uses AWS Cognito for secure authentication.
 
-## Make it yours
+      ```bash
+      # Set your AWS profile
+      export AWS_PROFILE=IBD-DEV
+      export AWS_REGION=us-east-1
+      ```
+    </Step>
 
-Design a docs site that looks great and empowers your users.
+    <Step title="Upload your RFP document">
+      Upload the Request for Proposal (RFP) document you need to respond to. The system supports PDF, DOCX, and other common formats.
 
-<Columns cols={2}>
-  <Card
-    title="Edit locally"
-    icon="pen-to-square"
-    href="/development"
-  >
-    Edit your docs locally and preview them in real time.
-  </Card>
-  <Card
-    title="Customize your site"
-    icon="palette"
-    href="/essentials/settings"
-  >
-    Customize the design and colors of your site to match your brand.
-  </Card>
-    <Card
-    title="Set up navigation"
-    icon="map"
-    href="/essentials/navigation"
-  >
-    Organize your docs to help users find what they need and succeed with your product.
-  </Card>
-  <Card
-    title="API documentation"
-    icon="terminal"
-    href="/api-reference/introduction"
-  >
-    Auto-generate API documentation from OpenAPI specifications.
-  </Card>
-</Columns>
+      <Note>
+        The platform uses AWS Bedrock with Claude for intelligent document analysis, extracting key requirements, evaluation criteria, and submission guidelines automatically.
+      </Note>
+    </Step>
 
-## Create beautiful pages
+    <Step title="Add your concept materials">
+      Provide your initial concept document or reference proposals. The AI will analyze these alongside the RFP to generate aligned content.
 
-Everything you need to create world-class documentation.
+      ```json Example concept structure
+      {
+        "title": "Climate-Smart Agriculture Initiative",
+        "objectives": ["Improve crop resilience", "Reduce water usage"],
+        "methodology": "Participatory action research"
+      }
+      ```
+    </Step>
 
-<Columns cols={2}>
-  <Card
-    title="Write with MDX"
-    icon="pen-fancy"
-    href="/essentials/markdown"
-  >
-    Use MDX to style your docs pages.
-  </Card>
-  <Card
-    title="Code samples"
-    icon="code"
-    href="/essentials/code"
-  >
-    Add sample code to demonstrate how to use your product.
-  </Card>
-  <Card
-    title="Images"
-    icon="image"
-    href="/essentials/images"
-  >
-    Display images and other media.
-  </Card>
-  <Card
-    title="Reusable snippets"
-    icon="recycle"
-    href="/essentials/reusable-snippets"
-  >
-    Write once and reuse across your docs.
-  </Card>
-</Columns>
+    <Step title="Generate and refine">
+      Let the AI analyze your documents, generate a concept document, create a proposal structure, and provide draft feedback. Review each step and refine as needed.
 
-## Need inspiration?
+      <Accordion title="Example AI-generated output">
+        The system produces structured sections including:
+        - Executive Summary aligned with RFP requirements
+        - Technical Approach matching evaluation criteria
+        - Budget framework based on RFP guidelines
+        - Risk mitigation strategies
+      </Accordion>
+    </Step>
+  </Steps>
+</div>
 
-<Card
-  title="See complete examples"
-  icon="stars"
-  href="https://mintlify.com/customers"
->
-  Browse our showcase of exceptional documentation sites.
-</Card>
+<div className="mt-16 mb-16 max-w-5xl mx-auto px-6">
+  <div className="text-center mb-12">
+    <h2 className="text-2xl sm:text-3xl font-bold text-gray-900 dark:text-white mb-4">
+      Core Features
+    </h2>
+    <p className="text-base text-gray-600 dark:text-gray-400 max-w-2xl mx-auto">
+      Everything you need to create winning proposals
+    </p>
+  </div>
+
+  <CardGroup cols={2}>
+    <Card title="Multi-Step Proposal Workflow" icon="list-check" href="/features/proposal-writer">
+      Four-step AI-guided process: RFP analysis → concept review → structure generation → draft feedback
+    </Card>
+    <Card title="Document Management" icon="folder-open" href="/features/document-management">
+      Upload RFPs, concept files, and reference proposals with automatic vectorization for AI retrieval
+    </Card>
+    <Card title="Admin Prompt Manager" icon="sliders" href="/features/admin-prompts">
+      Create, edit, and publish AI prompts used throughout the proposal workflow with version control
+    </Card>
+    <Card title="Secure Authentication" icon="shield-check" href="/features/authentication">
+      AWS Cognito-backed login with password reset, session management, and role-based access control
+    </Card>
+  </CardGroup>
+</div>
+
+<div className="mt-16 mb-16 max-w-5xl mx-auto px-6">
+  <div className="text-center mb-12">
+    <h2 className="text-2xl sm:text-3xl font-bold text-gray-900 dark:text-white mb-4">
+      Explore by Topic
+    </h2>
+    <p className="text-base text-gray-600 dark:text-gray-400 max-w-2xl mx-auto">
+      Deep dive into development and deployment
+    </p>
+  </div>
+
+  <CardGroup cols={3}>
+    <Card title="Local Development" icon="laptop-code" href="/development/setup">
+      Set up your development environment for frontend and backend
+    </Card>
+    <Card title="Architecture Overview" icon="diagram-project" href="/architecture">
+      Understand the serverless AWS stack and data flow
+    </Card>
+    <Card title="API Reference" icon="code" href="/api/proposals/create">
+      Complete REST API documentation with request/response examples
+    </Card>
+    <Card title="Deployment Guide" icon="rocket" href="/deployment/overview">
+      Deploy to testing and production environments
+    </Card>
+    <Card title="Frontend Development" icon="browser" href="/development/frontend">
+      React + TypeScript + Vite + Tailwind CSS patterns
+    </Card>
+    <Card title="Backend Development" icon="server" href="/development/backend">
+      FastAPI + Lambda + DynamoDB best practices
+    </Card>
+  </CardGroup>
+</div>
+
+<div className="mt-16 mb-16 max-w-5xl mx-auto px-6">
+  <div className="rounded-2xl border border-gray-200 dark:border-[#27272a] bg-gradient-to-br from-blue-50 to-blue-100 dark:from-[#1a1d27] dark:to-[#242838] p-8 sm:p-12 text-center">
+    <h2 className="text-2xl sm:text-3xl font-bold text-gray-900 dark:text-white mb-4">
+      Ready to Build Your First Proposal?
+    </h2>
+    <p className="text-base text-gray-700 dark:text-gray-300 max-w-2xl mx-auto mb-8">
+      Get started with the IGAD Innovation Hub and streamline your proposal writing process with AI-powered assistance.
+    </p>
+    <div className="flex flex-wrap justify-center gap-4">
+      <a
+        href="/quickstart"
+        className="inline-flex items-center px-6 py-3 rounded-lg bg-[#2563eb] text-white font-semibold hover:bg-[#1e40af] transition-colors"
+      >
+        Start Building
+        <svg className="ml-2 w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7l5 5m0 0l-5 5m5-5H6" />
+        </svg>
+      </a>
+      <a
+        href="/architecture"
+        className="inline-flex items-center px-6 py-3 rounded-lg border border-gray-300 dark:border-[#27272a] bg-white dark:bg-[#1a1d27] text-gray-900 dark:text-white font-semibold hover:bg-gray-50 dark:hover:bg-[#242838] transition-colors"
+      >
+        Learn More
+      </a>
+    </div>
+  </div>
+</div>

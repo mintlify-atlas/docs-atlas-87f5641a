@@ -1,0 +1,142 @@
+---
+title: 'Introduction'
+description: 'Overview of Alliance IGAD Innovation Hub - an AI-powered proposal writing platform that transforms the way development organizations create compelling funding proposals'
+---
+
+## What is Alliance IGAD Innovation Hub?
+
+Alliance IGAD Innovation Hub is an AI-powered SaaS platform designed to streamline and enhance the proposal writing process for development organizations, NGOs, and research institutions. By leveraging AWS Bedrock with Claude AI, the platform guides users through a structured workflow that transforms Request for Proposals (RFPs) and initial concepts into comprehensive, donor-aligned proposal documents.
+
+<Note>
+  The platform is specifically designed for development organizations working in the IGAD (Intergovernmental Authority on Development) region, helping teams respond faster to funding opportunities while maintaining high quality standards.
+</Note>
+
+## Key Capabilities
+
+<CardGroup cols={2}>
+  <Card title="Intelligent RFP Analysis" icon="file-search">
+    Upload RFP documents and let Claude AI extract key requirements, eligibility criteria, evaluation criteria, and compliance guidelines automatically.
+  </Card>
+  
+  <Card title="Concept Document Evaluation" icon="lightbulb">
+    Get AI-powered feedback on your initial concept documents, identifying gaps, strengths, and areas needing elaboration to meet donor expectations.
+  </Card>
+  
+  <Card title="Structured Proposal Generation" icon="file-text">
+    Generate comprehensive proposal sections with AI assistance, ensuring alignment with RFP requirements and donor priorities.
+  </Card>
+  
+  <Card title="Knowledge Base Integration" icon="database">
+    Upload reference proposals and existing work documents that are automatically vectorized and used to inform AI-generated content.
+  </Card>
+</CardGroup>
+
+## How It Works
+
+The platform guides you through a 4-step workflow:
+
+<Steps>
+  <Step title="Information Consolidation">
+    Upload your RFP document, initial concept notes, reference proposals, and existing work documents. The platform automatically analyzes and extracts key information.
+  </Step>
+  
+  <Step title="Concept Review & Generation">
+    Review AI-generated insights about your concept's alignment with the RFP. Select sections needing elaboration and generate enhanced concept documents.
+  </Step>
+  
+  <Step title="Structure & Workplan">
+    Define your proposal structure, timeline, and work packages. The AI helps you create detailed workplans aligned with donor requirements.
+  </Step>
+  
+  <Step title="Proposal Review & Export">
+    Review the complete proposal, make final edits, and export to Word or PDF format for submission.
+  </Step>
+</Steps>
+
+## Key Features
+
+### AI-Powered Analysis
+
+Built on **AWS Bedrock with Claude Sonnet 4**, the platform provides:
+
+- **Contextual Understanding**: Analyzes RFP requirements in context, identifying implicit expectations beyond explicit criteria
+- **Gap Analysis**: Compares your concept against RFP requirements to identify missing elements
+- **Donor Alignment**: Ensures generated content matches donor priorities and evaluation criteria
+- **Citation Support**: References your uploaded documents when generating content
+
+### Document Management
+
+Robust document handling with:
+
+- **Multi-format Support**: Upload PDF, DOCX, and TXT files
+- **S3 Storage**: Secure, versioned document storage on AWS S3
+- **Vector Search**: Automatic vectorization of reference documents for semantic search
+- **Text Extraction**: Intelligent text extraction from uploaded documents
+
+### Collaborative Workflow
+
+<Note>
+  The platform supports collaborative proposal development with:
+  - User comments on AI suggestions
+  - Section-by-section review and approval
+  - Revision tracking
+  - Export to standard formats for team review
+</Note>
+
+## Use Cases
+
+### Development Organizations
+
+Respond to donor RFPs faster by automating document analysis and first-draft generation. Focus your team's time on strategy and refinement rather than formatting and structure.
+
+### Research Institutions
+
+Leverage past successful proposals to inform new submissions. The platform learns from your reference documents to maintain institutional knowledge and writing style.
+
+### Grant Writers
+
+Manage multiple proposal pipelines efficiently. The platform tracks progress across proposals and ensures consistency in quality and compliance.
+
+## Technology Stack
+
+<CardGroup cols={2}>
+  <Card title="Frontend" icon="react">
+    React 18 with TypeScript, Vite, React Query, and Tailwind CSS for a modern, responsive user interface.
+  </Card>
+  
+  <Card title="Backend" icon="python">
+    Python 3.11 with FastAPI running on AWS Lambda, providing serverless scalability and cost efficiency.
+  </Card>
+  
+  <Card title="AI Engine" icon="brain">
+    AWS Bedrock with Claude Sonnet 4 for state-of-the-art natural language understanding and generation.
+  </Card>
+  
+  <Card title="Data & Storage" icon="database">
+    DynamoDB for metadata, S3 for documents, and S3 Express One Zone with vector indexing for semantic search.
+  </Card>
+</CardGroup>
+
+## Security & Compliance
+
+- **Authentication**: AWS Cognito for secure user management
+- **Authorization**: Role-based access control (RBAC) for admin and user roles
+- **Data Privacy**: All documents stored in private S3 buckets with encryption
+- **Audit Trail**: Complete activity tracking in DynamoDB
+
+<Warning>
+  The platform handles sensitive proposal documents and organizational information. Ensure you follow your organization's data governance policies when uploading documents.
+</Warning>
+
+## Support & Environments
+
+The platform operates in two environments:
+
+- **Testing Environment**: `https://test-igad-hub.alliance.cgiar.org` - For development and UAT
+- **Production Environment**: `https://igad-innovation-hub.com` - For live proposal development
+
+## Getting Started
+
+Ready to create your first proposal? Continue to the [Quickstart Guide](/quickstart) to set up your account and generate your first AI-assisted proposal document.
+
+For technical details about the system architecture, see the [Architecture Overview](/architecture).

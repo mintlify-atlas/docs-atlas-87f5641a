@@ -1,0 +1,557 @@
+---
+title: "Delete Documents"
+description: "Remove uploaded documents and their associated vectors from proposals"
+---
+
+## Delete RFP Document
+
+<ParamField path="proposal_id" type="string" required>
+  Unique identifier for the proposal
+</ParamField>
+
+<ParamField path="filename" type="string" required>
+  Name of the file to delete
+</ParamField>
+
+<ResponseField name="success" type="boolean">
+  Indicates if deletion was successful
+</ResponseField>
+
+<ResponseField name="message" type="string">
+  Confirmation message
+</ResponseField>
+
+<RequestExample>
+```bash cURL
+curl -X DELETE "https://api.igadinnovationhub.org/api/proposals/{proposal_id}/documents/{filename}" \
+  -H "Authorization: Bearer YOUR_TOKEN"
+```
+
+```python Python
+import requests
+
+url = f"https://api.igadinnovationhub.org/api/proposals/{proposal_id}/documents/{filename}"
+headers = {"Authorization": "Bearer YOUR_TOKEN"}
+
+response = requests.delete(url, headers=headers)
+print(response.json())
+```
+
+```typescript TypeScript
+const response = await fetch(
+  `${API_URL}/api/proposals/${proposalId}/documents/${filename}`,
+  {
+    method: 'DELETE',
+    headers: { 'Authorization': `Bearer ${token}` },
+  }
+)
+
+const data = await response.json()
+```
+</RequestExample>
+
+<ResponseExample>
+```json Success Response
+{
+  "success": true,
+  "message": "Document deleted successfully"
+}
+```
+
+```json Error Response
+{
+  "detail": "Proposal not found"
+}
+```
+</ResponseExample>
+
+### What Gets Deleted
+
+1. **S3 File:** `{proposal_code}/documents/rfp/{filename}`
+2. **DynamoDB Metadata:**
+   - Removes file from `uploaded_files.rfp-document` array
+   - Clears RFP analysis data:
+     - `rfp_analysis`
+     - `analysis_status_rfp`
+     - `rfp_analysis_started_at`
+     - `rfp_analysis_completed_at`
+     - `rfp_analysis_error`
+3. **Updates:** Sets `updated_at` timestamp
+
+<Info>
+Deleting an RFP document also removes all associated analysis results. You'll need to re-upload and re-analyze the RFP to restore this data.
+</Info>
+
+---
+
+## Delete Concept Document
+
+<ParamField path="proposal_id" type="string" required>
+  Unique identifier for the proposal
+</ParamField>
+
+<ParamField path="filename" type="string" required>
+  Name of the concept file to delete
+</ParamField>
+
+<RequestExample>
+```bash cURL
+curl -X DELETE "https://api.igadinnovationhub.org/api/proposals/{proposal_id}/documents/concept/{filename}" \
+  -H "Authorization: Bearer YOUR_TOKEN"
+```
+
+```python Python
+url = f"https://api.igadinnovationhub.org/api/proposals/{proposal_id}/documents/concept/{filename}"
+response = requests.delete(url, headers=headers)
+```
+
+```typescript TypeScript
+const response = await fetch(
+  `${API_URL}/api/proposals/${proposalId}/documents/concept/${filename}`,
+  {
+    method: 'DELETE',
+    headers: { 'Authorization': `Bearer ${token}` },
+  }
+)
+```
+</RequestExample>
+
+<ResponseExample>
+```json Success Response
+{
+  "success": true,
+  "message": "Concept file deleted successfully"
+}
+```
+</ResponseExample>
+
+### What Gets Deleted
+
+- **S3 File:** `{proposal_code}/documents/initial_concept/{filename}`
+- **No vector cleanup needed** (concept files are not vectorized)
+
+---
+
+## Delete Concept Text
+
+<ParamField path="proposal_id" type="string" required>
+  Unique identifier for the proposal
+</ParamField>
+
+<RequestExample>
+```bash cURL
+curl -X DELETE "https://api.igadinnovationhub.org/api/proposals/{proposal_id}/documents/concept-text" \
+  -H "Authorization: Bearer YOUR_TOKEN"
+```
+
+```python Python
+url = f"https://api.igadinnovationhub.org/api/proposals/{proposal_id}/documents/concept-text"
+response = requests.delete(url, headers=headers)
+```
+
+```typescript TypeScript
+const response = await fetch(
+  `${API_URL}/api/proposals/${proposalId}/documents/concept-text`,
+  {
+    method: 'DELETE',
+    headers: { 'Authorization': `Bearer ${token}` },
+  }
+)
+```
+</RequestExample>
+
+<ResponseExample>
+```json Success Response
+{
+  "success": true,
+  "message": "Concept text deleted successfully"
+}
+```
+</ResponseExample>
+
+### What Gets Deleted
+
+- **S3 File:** `{proposal_code}/documents/initial_concept/concept_text.txt`
+- **No DynamoDB update** (text is stored in S3 only)
+
+---
+
+## Delete Reference Proposal
+
+<ParamField path="proposal_id" type="string" required>
+  Unique identifier for the proposal
+</ParamField>
+
+<ParamField path="filename" type="string" required>
+  Name of the reference file to delete
+</ParamField>
+
+<ResponseField name="success" type="boolean">
+  Deletion success indicator
+</ResponseField>
+
+<ResponseField name="message" type="string">
+  Confirmation message
+</ResponseField>
+
+<RequestExample>
+```bash cURL
+curl -X DELETE "https://api.igadinnovationhub.org/api/proposals/{proposal_id}/documents/reference/{filename}" \
+  -H "Authorization: Bearer YOUR_TOKEN"
+```
+
+```python Python
+url = f"https://api.igadinnovationhub.org/api/proposals/{proposal_id}/documents/reference/{filename}"
+response = requests.delete(url, headers=headers)
+```
+
+```typescript TypeScript
+const response = await fetch(
+  `${API_URL}/api/proposals/${proposalId}/documents/reference/${filename}`,
+  {
+    method: 'DELETE',
+    headers: { 'Authorization': `Bearer ${token}` },
+  }
+)
+```
+</RequestExample>
+
+<ResponseExample>
+```json Success Response
+{
+  "success": true,
+  "message": "Reference file deleted successfully"
+}
+```
+</ResponseExample>
+
+### What Gets Deleted
+
+1. **S3 File:** `{proposal_code}/documents/references/{filename}`
+2. **Vector Embeddings:**
+   - Deletes all vectors from `reference-proposals-index`
+   - Searches by `document_name` in vector keys
+   - Key format: `*|*|*|*|{filename}|*|*`
+3. **DynamoDB:**
+   - Removes filename from `uploaded_files.reference-proposals` array
+   - Updates `updated_at` timestamp
+
+<Warning>
+Deleting a reference proposal removes all its vector embeddings. This affects AI retrieval for future proposal generation. Make sure you want to permanently remove this reference before deleting.
+</Warning>
+
+### Vector Deletion Process
+
+```python Deletion Flow
+# 1. List all vectors in index
+vectors = s3vectors.list_vectors(
+    vectorBucketName=bucket,
+    indexName="reference-proposals-index"
+)
+
+# 2. Filter by document_name (position 4 in key)
+keys_to_delete = []
+for vector in vectors:
+    parts = vector['key'].split('|')
+    if parts[4] == filename:  # document_name position
+        keys_to_delete.append(vector['key'])
+
+# 3. Delete matching vectors
+s3vectors.delete_vectors(
+    vectorBucketName=bucket,
+    indexName="reference-proposals-index",
+    keys=keys_to_delete
+)
+```
+
+---
+
+## Delete Supporting Document
+
+<ParamField path="proposal_id" type="string" required>
+  Unique identifier for the proposal
+</ParamField>
+
+<ParamField path="filename" type="string" required>
+  Name of the supporting file to delete
+</ParamField>
+
+<ResponseField name="success" type="boolean">
+  Deletion success indicator
+</ResponseField>
+
+<ResponseField name="message" type="string">
+  Confirmation message
+</ResponseField>
+
+<RequestExample>
+```bash cURL
+curl -X DELETE "https://api.igadinnovationhub.org/api/proposals/{proposal_id}/documents/supporting/{filename}" \
+  -H "Authorization: Bearer YOUR_TOKEN"
+```
+
+```python Python
+url = f"https://api.igadinnovationhub.org/api/proposals/{proposal_id}/documents/supporting/{filename}"
+response = requests.delete(url, headers=headers)
+```
+
+```typescript TypeScript
+const response = await fetch(
+  `${API_URL}/api/proposals/${proposalId}/documents/supporting/${filename}`,
+  {
+    method: 'DELETE',
+    headers: { 'Authorization': `Bearer ${token}` },
+  }
+)
+```
+</RequestExample>
+
+<ResponseExample>
+```json Success Response
+{
+  "success": true,
+  "message": "Supporting file and vectors deleted successfully"
+}
+```
+</ResponseExample>
+
+### What Gets Deleted
+
+1. **S3 File:** `{proposal_code}/documents/supporting/{filename}`
+2. **Vector Embeddings:**
+   - Deletes all vectors from `existing-work-index`
+   - Searches by `document_name` in vector keys
+3. **DynamoDB:**
+   - Removes filename from `uploaded_files.supporting-docs` array
+   - Updates `updated_at` timestamp
+
+---
+
+## Delete Work Text
+
+<ParamField path="proposal_id" type="string" required>
+  Unique identifier for the proposal
+</ParamField>
+
+<ResponseField name="success" type="boolean">
+  Deletion success indicator
+</ResponseField>
+
+<ResponseField name="message" type="string">
+  Confirmation message
+</ResponseField>
+
+<RequestExample>
+```bash cURL
+curl -X DELETE "https://api.igadinnovationhub.org/api/proposals/{proposal_id}/documents/work-text" \
+  -H "Authorization: Bearer YOUR_TOKEN"
+```
+
+```python Python
+url = f"https://api.igadinnovationhub.org/api/proposals/{proposal_id}/documents/work-text"
+response = requests.delete(url, headers=headers)
+```
+
+```typescript TypeScript
+const response = await fetch(
+  `${API_URL}/api/proposals/${proposalId}/documents/work-text`,
+  {
+    method: 'DELETE',
+    headers: { 'Authorization': `Bearer ${token}` },
+  }
+)
+```
+</RequestExample>
+
+<ResponseExample>
+```json Success Response
+{
+  "success": true,
+  "message": "Work text deleted successfully"
+}
+```
+</ResponseExample>
+
+### What Gets Deleted
+
+1. **S3 File:** `{proposal_code}/documents/supporting/existing_work_text.txt`
+2. **Vector Embeddings:**
+   - Deletes all vectors from `existing-work-index`
+   - Searches for `document_name = "existing_work_text"`
+   - Removes all chunks (may be multiple vectors)
+3. **DynamoDB:**
+   - Removes `text_inputs.existing-work` field
+   - Updates `updated_at` timestamp
+
+<Info>
+Work text is chunked during upload, so deleting it removes multiple vector entries from the index.
+</Info>
+
+---
+
+## Error Handling
+
+### Common Error Codes
+
+| Code | Error | Reason |
+|------|-------|--------|
+| `404` | Proposal not found | Invalid proposal ID or user doesn't own it |
+| `500` | S3 Delete Error | Failed to delete file from S3 |
+| `500` | Failed to delete vectors | Vector service error (non-critical) |
+| `500` | DynamoDB update failed | Database update error |
+
+### Non-Critical Failures
+
+Vector deletion failures are logged but **don't fail the request**:
+
+```python Example
+try:
+    vector_service.delete_vectors_by_document_name(filename, index)
+except Exception as e:
+    print(f"⚠️  Vector deletion error (non-critical): {e}")
+    # Continue with S3 and DynamoDB cleanup
+```
+
+### Error Response Examples
+
+<CodeGroup>
+```json 404 Not Found
+{
+  "detail": "Proposal not found"
+}
+```
+
+```json 500 S3 Error
+{
+  "detail": "Failed to delete document: S3 Delete Error: Access Denied"
+}
+```
+</CodeGroup>
+
+---
+
+## Best Practices
+
+### 1. Confirm Before Deleting
+
+Always show a confirmation dialog before deleting documents, especially reference proposals:
+
+```typescript Confirmation Example
+const deleteDocument = async (filename: string) => {
+  const confirmed = window.confirm(
+    `Delete "${filename}"? This will remove the file and all associated vectors. This action cannot be undone.`
+  )
+
+  if (!confirmed) return
+
+  try {
+    const response = await fetch(
+      `${API_URL}/api/proposals/${proposalId}/documents/reference/${filename}`,
+      {
+        method: 'DELETE',
+        headers: { 'Authorization': `Bearer ${token}` },
+      }
+    )
+
+    if (response.ok) {
+      showSuccess('Document deleted successfully')
+      refreshDocumentList()
+    } else {
+      const error = await response.json()
+      showError('Deletion failed', error.detail)
+    }
+  } catch (err) {
+    showError('Network error', 'Failed to delete document')
+  }
+}
+```
+
+### 2. Handle Partial Failures
+
+Vector deletion may fail silently. Check logs if you suspect incomplete cleanup:
+
+```python Check Logs
+# Backend logs will show:
+⚠️  No vectors found for document: filename.pdf
+# or
+⚠️  Vector deletion error (non-critical): ...
+```
+
+### 3. Refresh UI After Deletion
+
+```typescript Refresh Pattern
+const handleDelete = async (filename: string) => {
+  await deleteDocument(filename)
+  
+  // Refresh document list
+  await queryClient.invalidateQueries(['documents', proposalId])
+  
+  // Update vectorization status
+  await queryClient.invalidateQueries(['vectorization-status', proposalId])
+}
+```
+
+### 4. Bulk Deletion
+
+For deleting multiple files, use Promise.all but handle individual failures:
+
+```typescript Bulk Delete
+const deleteMultiple = async (filenames: string[]) => {
+  const results = await Promise.allSettled(
+    filenames.map(filename =>
+      fetch(`${API_URL}/api/proposals/${proposalId}/documents/reference/${filename}`, {
+        method: 'DELETE',
+        headers: { 'Authorization': `Bearer ${token}` },
+      })
+    )
+  )
+
+  const succeeded = results.filter(r => r.status === 'fulfilled').length
+  const failed = results.filter(r => r.status === 'rejected').length
+
+  showSuccess(`Deleted ${succeeded} files`)
+  if (failed > 0) {
+    showWarning(`Failed to delete ${failed} files`)
+  }
+}
+```
+
+### 5. Vector Index Cleanup
+
+If vectors aren't deleted properly (e.g., network error), you may need to manually clean up:
+
+```python Manual Cleanup
+from app.shared.vectors.service import VectorEmbeddingsService
+
+vector_service = VectorEmbeddingsService()
+
+# Delete by document name
+vector_service.delete_vectors_by_document_name(
+    document_name="orphaned_file.pdf",
+    index_name="reference-proposals-index"
+)
+
+# Delete all vectors for a proposal
+vector_service.delete_proposal_vectors(proposal_id="PROP-2024-001")
+```
+
+---
+
+## Cascade Deletion Summary
+
+| Document Type | S3 | Vectors | DynamoDB | Analysis Data |
+|---------------|----|---------|-----------|--------------|
+| **RFP Document** | ✅ | ❌ | ✅ | ✅ Clears analysis |
+| **Concept File** | ✅ | ❌ | ❌ | ❌ |
+| **Concept Text** | ✅ | ❌ | ❌ | ❌ |
+| **Reference Proposal** | ✅ | ✅ `reference-proposals-index` | ✅ | ❌ |
+| **Supporting File** | ✅ | ✅ `existing-work-index` | ✅ | ❌ |
+| **Work Text** | ✅ | ✅ `existing-work-index` (all chunks) | ✅ | ❌ |
+
+---
+
+## Related Endpoints
+
+- [Upload Documents](/api/documents/upload)
+- [List Documents](/api/documents/list)
+- [Get Vectorization Status](/api/documents/upload#check-vectorization-status)

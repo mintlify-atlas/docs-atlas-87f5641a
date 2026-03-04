@@ -1,0 +1,554 @@
+---
+title: "List Documents"
+description: "Retrieve all documents uploaded to a proposal from S3 storage"
+---
+
+## List All Documents
+
+<ParamField path="proposal_id" type="string" required>
+  Unique identifier for the proposal
+</ParamField>
+
+<ResponseField name="documents" type="array">
+  Array of document objects
+</ResponseField>
+
+<Expandable title="Document Object Properties">
+  <ResponseField name="filename" type="string">
+    Name of the uploaded file
+  </ResponseField>
+
+  <ResponseField name="size" type="number">
+    File size in bytes
+  </ResponseField>
+
+  <ResponseField name="type" type="string">
+    Document type: `"rfp"`, `"initial_concept"`, or `"unknown"`
+  </ResponseField>
+
+  <ResponseField name="uploaded_at" type="string">
+    ISO 8601 timestamp from S3 `LastModified`
+  </ResponseField>
+
+  <ResponseField name="key" type="string">
+    Full S3 object key
+  </ResponseField>
+</Expandable>
+
+<RequestExample>
+```bash cURL
+curl -X GET "https://api.igadinnovationhub.org/api/proposals/{proposal_id}/documents/" \
+  -H "Authorization: Bearer YOUR_TOKEN"
+```
+
+```python Python
+import requests
+
+url = f"https://api.igadinnovationhub.org/api/proposals/{proposal_id}/documents/"
+headers = {"Authorization": "Bearer YOUR_TOKEN"}
+
+response = requests.get(url, headers=headers)
+documents = response.json()["documents"]
+
+for doc in documents:
+    print(f"{doc['filename']} ({doc['size']} bytes) - {doc['type']}")
+```
+
+```typescript TypeScript
+const response = await fetch(
+  `${API_URL}/api/proposals/${proposalId}/documents/`,
+  {
+    headers: { 'Authorization': `Bearer ${token}` },
+  }
+)
+
+const { documents } = await response.json()
+
+documents.forEach(doc => {
+  console.log(`${doc.filename} (${doc.size} bytes) - ${doc.type}`)
+})
+```
+</RequestExample>
+
+<ResponseExample>
+```json Success Response
+{
+  "documents": [
+    {
+      "filename": "rfp_2024_health.pdf",
+      "size": 2458624,
+      "type": "rfp",
+      "uploaded_at": "2024-03-15T10:30:00Z",
+      "key": "PROP-2024-001/documents/rfp/rfp_2024_health.pdf"
+    },
+    {
+      "filename": "concept.docx",
+      "size": 45120,
+      "type": "initial_concept",
+      "uploaded_at": "2024-03-15T11:00:00Z",
+      "key": "PROP-2024-001/documents/initial_concept/concept.docx"
+    },
+    {
+      "filename": "concept_text.txt",
+      "size": 1024,
+      "type": "initial_concept",
+      "uploaded_at": "2024-03-15T11:05:00Z",
+      "key": "PROP-2024-001/documents/initial_concept/concept_text.txt"
+    }
+  ]
+}
+```
+
+```json Empty Response
+{
+  "documents": []
+}
+```
+</ResponseExample>
+
+### Document Type Detection
+
+The `type` field is determined by the S3 key path:
+
+| S3 Path | Document Type |
+|---------|---------------|
+| `*/documents/rfp/*` | `"rfp"` |
+| `*/documents/initial_concept/*` | `"initial_concept"` |
+| Other paths | `"unknown"` |
+
+<Info>
+This endpoint only lists RFP and concept documents. For a complete list of all document types, use the categorized endpoint below.
+</Info>
+
+---
+
+## Get Documents by Category
+
+<ParamField path="proposal_id" type="string" required>
+  Unique identifier for the proposal
+</ParamField>
+
+<ResponseField name="rfp_documents" type="array">
+  Array of RFP document filenames
+</ResponseField>
+
+<ResponseField name="concept_documents" type="array">
+  Array of concept document filenames
+</ResponseField>
+
+<ResponseField name="reference_documents" type="array">
+  Array of reference proposal filenames
+</ResponseField>
+
+<ResponseField name="supporting_documents" type="array">
+  Array of supporting document filenames
+</ResponseField>
+
+<RequestExample>
+```bash cURL
+curl -X GET "https://api.igadinnovationhub.org/api/proposals/{proposal_id}/documents" \
+  -H "Authorization: Bearer YOUR_TOKEN"
+```
+
+```python Python
+import requests
+
+url = f"https://api.igadinnovationhub.org/api/proposals/{proposal_id}/documents"
+headers = {"Authorization": "Bearer YOUR_TOKEN"}
+
+response = requests.get(url, headers=headers)
+data = response.json()
+
+print(f"RFP: {len(data['rfp_documents'])} files")
+print(f"Concept: {len(data['concept_documents'])} files")
+print(f"References: {len(data['reference_documents'])} files")
+print(f"Supporting: {len(data['supporting_documents'])} files")
+```
+
+```typescript TypeScript
+const response = await fetch(
+  `${API_URL}/api/proposals/${proposalId}/documents`,
+  {
+    headers: { 'Authorization': `Bearer ${token}` },
+  }
+)
+
+const {
+  rfp_documents,
+  concept_documents,
+  reference_documents,
+  supporting_documents,
+} = await response.json()
+
+console.log('RFP:', rfp_documents)
+console.log('Concept:', concept_documents)
+console.log('References:', reference_documents)
+console.log('Supporting:', supporting_documents)
+```
+</RequestExample>
+
+<ResponseExample>
+```json Success Response
+{
+  "rfp_documents": [
+    "rfp_2024_health.pdf"
+  ],
+  "concept_documents": [
+    "concept.docx",
+    "concept_text.txt"
+  ],
+  "reference_documents": [
+    "usaid_health_2023.pdf",
+    "world_bank_education.pdf",
+    "unicef_wash_proposal.docx"
+  ],
+  "supporting_documents": [
+    "igad_previous_work.pdf",
+    "existing_work_text.txt",
+    "capacity_building_report.docx"
+  ]
+}
+```
+
+```json Empty Categories
+{
+  "rfp_documents": [],
+  "concept_documents": [],
+  "reference_documents": [],
+  "supporting_documents": []
+}
+```
+</ResponseExample>
+
+### S3 Folder Structure
+
+The endpoint lists files from these S3 prefixes:
+
+```
+{proposal_code}/documents/
+├── rfp/              → rfp_documents
+├── initial_concept/  → concept_documents
+├── references/       → reference_documents
+└── supporting/       → supporting_documents
+```
+
+### Error Handling
+
+If listing fails for a specific category, the endpoint continues with other categories:
+
+```python Backend Logic
+for doc_type, prefix in folders.items():
+    try:
+        response = s3_client.list_objects_v2(Bucket=bucket, Prefix=prefix)
+        # ... process files
+    except Exception as e:
+        print(f"Error listing {doc_type}: {str(e)}")
+        # Continue with other folders
+```
+
+---
+
+## Filter Documents by Type
+
+Use the categorized response to filter by document type:
+
+<CodeGroup>
+```python Python
+# Get only reference proposals
+response = requests.get(
+    f"{API_URL}/api/proposals/{proposal_id}/documents",
+    headers=headers
+)
+references = response.json()["reference_documents"]
+
+print(f"Found {len(references)} reference proposals")
+for ref in references:
+    print(f"  - {ref}")
+```
+
+```typescript TypeScript
+// Get only vectorized documents (references + supporting)
+const response = await fetch(
+  `${API_URL}/api/proposals/${proposalId}/documents`,
+  { headers: { 'Authorization': `Bearer ${token}` } }
+)
+
+const { reference_documents, supporting_documents } = await response.json()
+
+const vectorizedDocs = [
+  ...reference_documents.map(f => ({ name: f, type: 'reference' })),
+  ...supporting_documents.map(f => ({ name: f, type: 'supporting' })),
+]
+
+console.log(`${vectorizedDocs.length} vectorized documents`)
+```
+</CodeGroup>
+
+---
+
+## Document Counts
+
+Get quick counts of documents by category:
+
+<CodeGroup>
+```python Python
+import requests
+
+response = requests.get(
+    f"{API_URL}/api/proposals/{proposal_id}/documents",
+    headers=headers
+)
+data = response.json()
+
+counts = {
+    "RFP": len(data["rfp_documents"]),
+    "Concept": len(data["concept_documents"]),
+    "References": len(data["reference_documents"]),
+    "Supporting": len(data["supporting_documents"]),
+}
+
+total = sum(counts.values())
+print(f"Total documents: {total}")
+for doc_type, count in counts.items():
+    print(f"  {doc_type}: {count}")
+```
+
+```typescript TypeScript
+const response = await fetch(
+  `${API_URL}/api/proposals/${proposalId}/documents`,
+  { headers: { 'Authorization': `Bearer ${token}` } }
+)
+
+const data = await response.json()
+
+const counts = {
+  RFP: data.rfp_documents.length,
+  Concept: data.concept_documents.length,
+  References: data.reference_documents.length,
+  Supporting: data.supporting_documents.length,
+}
+
+const total = Object.values(counts).reduce((sum, count) => sum + count, 0)
+
+console.log(`Total: ${total} documents`)
+Object.entries(counts).forEach(([type, count]) => {
+  console.log(`  ${type}: ${count}`)
+})
+```
+</CodeGroup>
+
+---
+
+## Check Vectorization Status
+
+Combine document listing with vectorization status:
+
+<CodeGroup>
+```python Python
+import requests
+
+# Get document list
+docs_response = requests.get(
+    f"{API_URL}/api/proposals/{proposal_id}/documents",
+    headers=headers
+)
+docs = docs_response.json()
+
+# Get vectorization status
+status_response = requests.get(
+    f"{API_URL}/api/proposals/{proposal_id}/documents/vectorization-status",
+    headers=headers
+)
+status_data = status_response.json()
+
+# Combine data
+for ref in docs["reference_documents"]:
+    file_status = status_data["vectorization_status"].get(ref, {})
+    status = file_status.get("status", "unknown")
+    print(f"{ref}: {status}")
+```
+
+```typescript TypeScript
+const [docsResponse, statusResponse] = await Promise.all([
+  fetch(`${API_URL}/api/proposals/${proposalId}/documents`, {
+    headers: { 'Authorization': `Bearer ${token}` },
+  }),
+  fetch(`${API_URL}/api/proposals/${proposalId}/documents/vectorization-status`, {
+    headers: { 'Authorization': `Bearer ${token}` },
+  }),
+])
+
+const docs = await docsResponse.json()
+const statusData = await statusResponse.json()
+
+const referencesWithStatus = docs.reference_documents.map(filename => ({
+  filename,
+  status: statusData.vectorization_status[filename]?.status || 'unknown',
+  chunks: statusData.vectorization_status[filename]?.total_chunks || 0,
+}))
+
+console.log('References:', referencesWithStatus)
+```
+</CodeGroup>
+
+---
+
+## Error Handling
+
+### Common Error Codes
+
+| Code | Error | Solution |
+|------|-------|----------|
+| `404` | Proposal not found | Verify proposal ID and user ownership |
+| `500` | S3 bucket not configured | Contact administrator |
+| `500` | Failed to list documents | Check S3 permissions |
+
+### Error Response Example
+
+```json 404 Not Found
+{
+  "detail": "Proposal not found"
+}
+```
+
+```json 500 S3 Error
+{
+  "detail": "Failed to list documents: S3 bucket not configured"
+}
+```
+
+---
+
+## Best Practices
+
+### 1. Caching Document Lists
+
+Cache document lists to reduce S3 API calls:
+
+```typescript React Query Caching
+import { useQuery } from '@tanstack/react-query'
+
+const useDocuments = (proposalId: string) => {
+  return useQuery({
+    queryKey: ['documents', proposalId],
+    queryFn: async () => {
+      const response = await fetch(
+        `${API_URL}/api/proposals/${proposalId}/documents`,
+        { headers: { 'Authorization': `Bearer ${token}` } }
+      )
+      return response.json()
+    },
+    staleTime: 60000, // Cache for 1 minute
+  })
+}
+```
+
+### 2. Invalidate Cache After Upload/Delete
+
+```typescript Cache Invalidation
+import { useMutation, useQueryClient } from '@tanstack/react-query'
+
+const queryClient = useQueryClient()
+
+const deleteDocument = useMutation({
+  mutationFn: async (filename: string) => {
+    const response = await fetch(
+      `${API_URL}/api/proposals/${proposalId}/documents/reference/${filename}`,
+      { method: 'DELETE', headers: { 'Authorization': `Bearer ${token}` } }
+    )
+    if (!response.ok) throw new Error('Delete failed')
+    return response.json()
+  },
+  onSuccess: () => {
+    // Invalidate document list cache
+    queryClient.invalidateQueries(['documents', proposalId])
+  },
+})
+```
+
+### 3. Display File Sizes
+
+Format bytes for human-readable display:
+
+```typescript File Size Formatting
+const formatFileSize = (bytes: number): string => {
+  if (bytes === 0) return '0 Bytes'
+  
+  const k = 1024
+  const sizes = ['Bytes', 'KB', 'MB', 'GB']
+  const i = Math.floor(Math.log(bytes) / Math.log(k))
+  
+  return `${parseFloat((bytes / Math.pow(k, i)).toFixed(2))} ${sizes[i]}`
+}
+
+// Usage
+documents.forEach(doc => {
+  console.log(`${doc.filename} - ${formatFileSize(doc.size)}`)
+})
+```
+
+### 4. Group by Upload Date
+
+```typescript Date Grouping
+const groupByDate = (documents: Document[]) => {
+  const groups: Record<string, Document[]> = {}
+  
+  documents.forEach(doc => {
+    const date = new Date(doc.uploaded_at).toLocaleDateString()
+    if (!groups[date]) groups[date] = []
+    groups[date].push(doc)
+  })
+  
+  return groups
+}
+
+const grouped = groupByDate(documents)
+Object.entries(grouped).forEach(([date, docs]) => {
+  console.log(`\n${date}:`)
+  docs.forEach(doc => console.log(`  - ${doc.filename}`))
+})
+```
+
+### 5. Check for Missing Documents
+
+```python Validation
+import requests
+
+response = requests.get(
+    f"{API_URL}/api/proposals/{proposal_id}/documents",
+    headers=headers
+)
+data = response.json()
+
+# Check required documents
+if not data["rfp_documents"]:
+    print("⚠️  Warning: No RFP document uploaded")
+
+if not data["reference_documents"] and not data["supporting_documents"]:
+    print("⚠️  Warning: No reference materials uploaded")
+
+total_refs = len(data["reference_documents"])
+if total_refs < 3:
+    print(f"⚠️  Warning: Only {total_refs} reference proposals (recommended: 3+)")
+```
+
+---
+
+## Response Size Considerations
+
+- **Typical response size:** < 10KB for most proposals
+- **Large proposals:** 100+ documents may produce 50KB+ responses
+- **Folders are skipped:** S3 keys ending with `/` are filtered out
+- **No pagination:** All documents returned in a single response
+
+<Info>
+If you need to handle proposals with thousands of documents, consider implementing pagination or server-side filtering.
+</Info>
+
+---
+
+## Related Endpoints
+
+- [Upload Documents](/api/documents/upload)
+- [Delete Documents](/api/documents/delete)
+- [Vectorization Status](/api/documents/upload#check-vectorization-status)

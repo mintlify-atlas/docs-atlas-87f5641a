@@ -1,0 +1,253 @@
+---
+title: "Get Proposal"
+api: "GET /api/proposals/{proposal_id}"
+description: "Retrieve a specific proposal by its ID or proposal code. Includes computed step completion status."
+---
+
+## Authentication
+
+This endpoint requires authentication via Bearer token.
+
+```bash
+Authorization: Bearer <token>
+```
+
+## Path Parameters
+
+<ParamField path="proposal_id" type="string" required>
+  The proposal identifier. Can be either:
+  - UUID format: `a1b2c3d4-e5f6-7890-abcd-ef1234567890`
+  - Proposal code format: `PROP-20260304-A1B2`
+</ParamField>
+
+## Response
+
+Returns a proposal object with computed step completion information.
+
+<ResponseField name="id" type="string">
+  Unique proposal identifier (UUID).
+</ResponseField>
+
+<ResponseField name="proposalCode" type="string">
+  Human-readable proposal code (format: PROP-YYYYMMDD-XXXX).
+</ResponseField>
+
+<ResponseField name="title" type="string">
+  The title of the proposal.
+</ResponseField>
+
+<ResponseField name="description" type="string">
+  The description of the proposal.
+</ResponseField>
+
+<ResponseField name="template_id" type="string">
+  The template ID if specified.
+</ResponseField>
+
+<ResponseField name="status" type="string">
+  Current status of the proposal (e.g., "draft", "submitted", "completed").
+</ResponseField>
+
+<ResponseField name="created_at" type="string">
+  ISO 8601 timestamp of when the proposal was created.
+</ResponseField>
+
+<ResponseField name="updated_at" type="string">
+  ISO 8601 timestamp of the last update.
+</ResponseField>
+
+<ResponseField name="user_id" type="string">
+  The ID of the user who owns the proposal.
+</ResponseField>
+
+<ResponseField name="user_email" type="string">
+  The email of the user who owns the proposal.
+</ResponseField>
+
+<ResponseField name="user_name" type="string">
+  The name of the user who owns the proposal.
+</ResponseField>
+
+<ResponseField name="uploaded_files" type="object">
+  Dictionary of uploaded files organized by category.
+  
+  Common categories:
+  - `rfp-document`: RFP/tender documents
+  - `concept-document`: Initial concept documents
+  - `reference-proposals`: Reference proposal examples
+</ResponseField>
+
+<ResponseField name="text_inputs" type="object">
+  Dictionary of text inputs provided by the user.
+  
+  Common keys:
+  - `initial-concept`: User's initial concept text
+</ResponseField>
+
+<ResponseField name="metadata" type="object">
+  Additional metadata including analysis results and processing status.
+  
+  <Expandable title="Common Metadata Fields">
+    - `rfp_analysis`: RFP analysis results
+    - `concept_analysis`: Concept evaluation results
+    - `proposal_template`: Generated proposal template
+    - `rfp_analysis_status`: Status of RFP analysis ("pending", "processing", "completed", "failed")
+    - `concept_analysis_status`: Status of concept analysis
+    - `template_generation_status`: Status of template generation
+    - `draft_feedback_status`: Status of draft feedback
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="completed_steps" type="array">
+  Array of step numbers that have been completed (e.g., `[1, 2, 3]`).
+  
+  Steps:
+  - Step 1: Document upload (RFP and concept/references)
+  - Step 2: Analysis completion (RFP and concept)
+  - Step 3: Template generation
+  - Step 4: Draft feedback
+</ResponseField>
+
+<ResponseField name="step_completion" type="object">
+  Detailed completion status for each step.
+  
+  <Expandable title="Step Completion Structure">
+    <ResponseField name="step_1" type="object">
+      <Expandable title="Step 1 Details">
+        - `completed`: boolean
+        - `has_rfp`: boolean - RFP document uploaded
+        - `has_concept`: boolean - Concept document or text provided
+        - `has_references`: boolean - Reference proposals uploaded
+      </Expandable>
+    </ResponseField>
+    
+    <ResponseField name="step_2" type="object">
+      <Expandable title="Step 2 Details">
+        - `completed`: boolean
+        - `rfp_analysis_status`: string - "pending", "processing", "completed", or "failed"
+        - `concept_analysis_status`: string
+        - `has_concept_document`: boolean - Concept document generated
+      </Expandable>
+    </ResponseField>
+    
+    <ResponseField name="step_3" type="object">
+      <Expandable title="Step 3 Details">
+        - `completed`: boolean
+        - `template_status`: string - "pending", "processing", "completed", or "failed"
+        - `has_template`: boolean - Proposal template generated
+        - `has_generated_content`: boolean - Content generated
+      </Expandable>
+    </ResponseField>
+    
+    <ResponseField name="step_4" type="object">
+      <Expandable title="Step 4 Details">
+        - `completed`: boolean
+        - `feedback_status`: string - "pending", "processing", "completed", or "failed"
+        - `has_feedback`: boolean - Draft feedback received
+      </Expandable>
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+## Example Requests
+
+<CodeGroup>
+
+```bash By UUID
+curl -X GET https://api.igadregion.org/api/proposals/a1b2c3d4-e5f6-7890-abcd-ef1234567890 \
+  -H "Authorization: Bearer YOUR_TOKEN"
+```
+
+```bash By Proposal Code
+curl -X GET https://api.igadregion.org/api/proposals/PROP-20260304-A1B2 \
+  -H "Authorization: Bearer YOUR_TOKEN"
+```
+
+</CodeGroup>
+
+## Response Example
+
+```json
+{
+  "id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+  "proposalCode": "PROP-20260304-A1B2",
+  "title": "Climate Resilience in East Africa",
+  "description": "Proposal for improving climate adaptation strategies",
+  "template_id": null,
+  "status": "draft",
+  "created_at": "2026-03-04T10:30:00.000Z",
+  "updated_at": "2026-03-04T15:45:00.000Z",
+  "user_id": "user_123",
+  "user_email": "user@example.com",
+  "user_name": "John Doe",
+  "uploaded_files": {
+    "rfp-document": ["s3://bucket/PROP-20260304-A1B2/rfp.pdf"],
+    "concept-document": ["s3://bucket/PROP-20260304-A1B2/concept.pdf"]
+  },
+  "text_inputs": {
+    "initial-concept": "Brief description of the project concept..."
+  },
+  "metadata": {
+    "rfp_analysis": {
+      "summary": "Analysis of the RFP requirements...",
+      "key_requirements": ["Requirement 1", "Requirement 2"]
+    },
+    "rfp_analysis_status": "completed",
+    "concept_analysis_status": "processing",
+    "rfp_analysis_completed_at": "2026-03-04T14:30:00.000Z"
+  },
+  "completed_steps": [1, 2],
+  "step_completion": {
+    "step_1": {
+      "completed": true,
+      "has_rfp": true,
+      "has_concept": true,
+      "has_references": false
+    },
+    "step_2": {
+      "completed": true,
+      "rfp_analysis_status": "completed",
+      "concept_analysis_status": "completed",
+      "has_concept_document": true
+    },
+    "step_3": {
+      "completed": false,
+      "template_status": "pending",
+      "has_template": false,
+      "has_generated_content": false
+    },
+    "step_4": {
+      "completed": false,
+      "feedback_status": "pending",
+      "has_feedback": false
+    }
+  }
+}
+```
+
+## Error Responses
+
+<ResponseField name="404 Not Found" type="error">
+  ```json
+  {
+    "detail": "Proposal not found"
+  }
+  ```
+  The proposal with the specified ID does not exist or does not belong to the authenticated user.
+</ResponseField>
+
+<ResponseField name="403 Forbidden" type="error">
+  ```json
+  {
+    "detail": "Access denied"
+  }
+  ```
+  The proposal exists but belongs to a different user.
+</ResponseField>
+
+## Notes
+
+- **Flexible ID Format**: You can use either the UUID or the human-readable proposal code (PROP-YYYYMMDD-XXXX) as the identifier.
+- **Access Control**: Users can only access their own proposals. Attempting to access another user's proposal returns a 403 error.
+- **Step Completion**: The `completed_steps` and `step_completion` fields are computed server-side based on actual data presence, ensuring consistent state across sessions.
+- **Eventual Consistency**: For newly created proposals queried by UUID, the endpoint includes a fallback scan to handle GSI eventual consistency.

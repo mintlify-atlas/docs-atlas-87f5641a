@@ -1,0 +1,596 @@
+---
+title: 'Frontend Development'
+description: 'React 18 + TypeScript + Vite frontend architecture and development guide'
+icon: 'react'
+---
+
+## Architecture Overview
+
+The frontend is a modern React 18 single-page application built with TypeScript, Vite, and Tailwind CSS. It follows a feature-based architecture with shared components and services.
+
+### Tech Stack
+
+<CardGroup cols={3}>
+  <Card title="React 18" icon="react">
+    UI framework with hooks and concurrent features
+  </Card>
+  <Card title="TypeScript" icon="code">
+    Type safety and better developer experience
+  </Card>
+  <Card title="Vite" icon="bolt">
+    Fast build tool and dev server with HMR
+  </Card>
+  <Card title="Tailwind CSS" icon="paintbrush">
+    Utility-first CSS framework
+  </Card>
+  <Card title="React Query" icon="database">
+    Server state management and caching
+  </Card>
+  <Card title="Zustand" icon="box">
+    Lightweight client state management
+  </Card>
+</CardGroup>
+
+## Project Structure
+
+```
+src/
+├── pages/                    # Top-level route pages
+│   ├── HomePage.tsx
+│   ├── DashboardPage.tsx
+│   └── NotFoundPage.tsx
+├── shared/                   # Shared across features
+│   ├── components/
+│   │   ├── ui/              # Reusable UI (Button, Card, Toast)
+│   │   ├── Layout.tsx       # App layout wrapper
+│   │   ├── Navigation.tsx   # Main navigation
+│   │   └── ProtectedRoute.tsx
+│   ├── hooks/
+│   │   ├── useAuth.ts       # Authentication hook
+│   │   ├── useToast.ts      # Toast notifications
+│   │   └── useConfirmation.ts
+│   └── services/
+│       ├── apiClient.ts     # Axios instance
+│       ├── authService.ts   # Auth operations
+│       └── tokenManager.ts  # JWT handling
+├── tools/                   # Feature modules
+│   ├── proposalwriter/     # Main feature
+│   │   ├── pages/          # Feature pages
+│   │   ├── components/     # Feature components
+│   │   └── services/       # API calls
+│   ├── admin/              # Admin features
+│   └── auth/               # Auth pages
+├── types/                   # TypeScript types
+├── styles/                  # Global styles
+├── App.tsx                  # Routes & providers
+└── main.tsx                 # Entry point
+```
+
+<Note>
+This is a **screaming architecture** - the folder structure immediately tells you what the application does (proposalwriter, admin, etc.).
+</Note>
+
+## Component Patterns
+
+### Functional Component Structure
+
+All components follow this standard structure:
+
+```typescript
+// ============================================================================
+// IMPORTS
+// ============================================================================
+import { useState, useCallback } from 'react'
+import { FileText, Upload } from 'lucidereact'
+import { useToast } from '@/shared/hooks/useToast'
+import { Button } from '@/shared/components/ui/Button'
+import styles from './MyComponent.module.css'
+
+// ============================================================================
+// TYPES
+// ============================================================================
+interface MyComponentProps {
+  title: string
+  onSubmit: (data: FormData) => void
+}
+
+// ============================================================================
+// COMPONENT
+// ============================================================================
+export function MyComponent({ title, onSubmit }: MyComponentProps) {
+  // STATE
+  const [loading, setLoading] = useState(false)
+  const { showSuccess, showError } = useToast()
+
+  // HANDLERS
+  const handleSubmit = useCallback(async () => {
+    setLoading(true)
+    try {
+      await onSubmit(data)
+      showSuccess('Success', 'Operation completed')
+    } catch (error) {
+      showError('Error', 'Operation failed')
+    } finally {
+      setLoading(false)
+    }
+  }, [onSubmit, showSuccess, showError])
+
+  // RENDER
+  return (
+    <div className={styles.container}>
+      <h1>{title}</h1>
+      <Button onClick={handleSubmit} disabled={loading}>
+        Submit
+      </Button>
+    </div>
+  )
+}
+```
+
+### forwardRef Pattern (UI Components)
+
+For reusable UI components that need refs:
+
+```typescript
+import { forwardRef } from 'react'
+
+interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
+  variant?: 'primary' | 'secondary'
+}
+
+export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
+  ({ variant = 'primary', children, ...props }, ref) => {
+    return (
+      <button ref={ref} className={styles[variant]} {...props}>
+        {children}
+      </button>
+    )
+  }
+)
+Button.displayName = 'Button'
+```
+
+## State Management
+
+### React Query (Server State)
+
+Use React Query for all API data fetching and mutations:
+
+```typescript
+import { useQuery, useMutation, useQueryClient } from '@tanstack/reactquery'
+import { proposalService } from '@/tools/proposalwriter/services/proposalService'
+
+// Query - Fetch data
+const { data, isLoading, error, refetch } = useQuery({
+  queryKey: ['proposal', proposalId],
+  queryFn: () => proposalService.getProposal(proposalId),
+  enabled: !!proposalId,
+  staleTime: 5 * 60 * 1000, // 5 minutes
+})
+
+// Mutation - Update data
+const queryClient = useQueryClient()
+const mutation = useMutation({
+  mutationFn: proposalService.updateProposal,
+  onSuccess: () => {
+    queryClient.invalidateQueries({ queryKey: ['proposal', proposalId] })
+    showSuccess('Saved', 'Changes saved successfully')
+  },
+  onError: (error) => {
+    showError('Error', 'Failed to save changes')
+  }
+})
+
+// Use mutation
+mutation.mutate({ proposalId, updates })
+```
+
+### Zustand (Client State)
+
+Use Zustand for UI state that doesn't come from the server:
+
+```typescript
+import { create } from 'zustand'
+
+interface StoreState {
+  currentStep: number
+  setCurrentStep: (step: number) => void
+  sidebarOpen: boolean
+  toggleSidebar: () => void
+}
+
+export const useProposalStore = create<StoreState>(set => ({
+  currentStep: 1,
+  setCurrentStep: step => set({ currentStep: step }),
+  sidebarOpen: true,
+  toggleSidebar: () => set(state => ({ sidebarOpen: !state.sidebarOpen })),
+}))
+
+// Usage in component
+const { currentStep, setCurrentStep } = useProposalStore()
+```
+
+## API Client
+
+All API calls go through the centralized `apiClient`:
+
+```typescript
+// src/shared/services/apiClient.ts
+import axios from 'axios'
+import { tokenManager } from './tokenManager'
+
+export const apiClient = axios.create({
+  baseURL: import.meta.env.VITEAPIBASEURL,
+  timeout: 30000, // 30 seconds
+  headers: {
+    'ContentType': 'application/json',
+  },
+})
+
+// Request interceptor - Add auth token
+apiClient.interceptors.request.use(config => {
+  const token = tokenManager.getAccessToken()
+  if (token) {
+    config.headers.Authorization = `Bearer ${token}`
+  }
+  return config
+})
+
+// Response interceptor - Handle 401, refresh token
+apiClient.interceptors.response.use(
+  response => response,
+  async error => {
+    const originalRequest = error.config
+    
+    // Handle 401 - Token expired
+    if (error.response?.status === 401 && !originalRequest.retry) {
+      originalRequest.retry = true
+      
+      const newToken = await tokenManager.handleTokenRefreshOnDemand()
+      if (newToken) {
+        originalRequest.headers.Authorization = `Bearer ${newToken}`
+        return apiClient(originalRequest)
+      }
+    }
+    
+    return Promise.reject(error)
+  }
+)
+```
+
+### Creating Service Modules
+
+Organize API calls into service modules:
+
+```typescript
+// src/tools/proposalwriter/services/proposalService.ts
+import { apiClient } from '@/shared/services/apiClient'
+
+export const proposalService = {
+  async getProposal(proposalId: string) {
+    const response = await apiClient.get(`/proposals/${proposalId}`)
+    return response.data.proposal
+  },
+  
+  async createProposal(data: ProposalCreate) {
+    const response = await apiClient.post('/proposals', data)
+    return response.data.proposal
+  },
+  
+  async updateProposal(proposalId: string, updates: ProposalUpdate) {
+    const response = await apiClient.put(`/proposals/${proposalId}`, updates)
+    return response.data.proposal
+  },
+  
+  async uploadDocument(proposalId: string, file: File) {
+    const formData = new FormData()
+    formData.append('file', file)
+    
+    const response = await apiClient.post(
+      `/proposals/${proposalId}/documents/upload`,
+      formData,
+      { headers: { 'ContentType': 'multipart/formdata' } }
+    )
+    return response.data
+  },
+}
+```
+
+## Styling
+
+### Tailwind CSS (Preferred)
+
+Use Tailwind utility classes for most styling:
+
+```typescript
+<div className="flex items-center gap-4 p-6 bg-white rounded-lg shadow-md">
+  <FileText className="w-6 h-6 text-primary500" />
+  <h2 className="text-xl font-semibold text-gray-900">Title</h2>
+</div>
+```
+
+### CSS Modules (When Needed)
+
+For complex, component-specific styles:
+
+```typescript
+import styles from './Component.module.css'
+
+<div className={styles.container}>
+  <span className={styles.highlight}>Text</span>
+</div>
+```
+
+### Conditional Classes
+
+Use the `cn()` utility for conditional classes:
+
+```typescript
+import { cn } from '@/lib/utils'
+
+<div className={cn(
+  'flex items-center gap-4 p-4 roundedcard',
+  isActive && 'bg-primary50 border-primary500',
+  isDisabled && 'opacity50 pointerEventsnone'
+)}>
+```
+
+## Authentication
+
+The `useAuth` hook provides authentication state and methods:
+
+```typescript
+import { useAuth } from '@/shared/hooks/useAuth'
+
+function MyComponent() {
+  const { user, isAuthenticated, loading } = useAuth()
+  
+  if (loading) return <Spinner />
+  if (!isAuthenticated) return <LoginPrompt />
+  
+  return <div>Welcome, {user.email}!</div>
+}
+```
+
+### Protected Routes
+
+```typescript
+// In App.tsx
+import { ProtectedRoute } from '@/shared/components/ProtectedRoute'
+
+<Route
+  path="/dashboard"
+  element={
+    <ProtectedRoute>
+      <DashboardPage />
+    </ProtectedRoute>
+  }
+/>
+```
+
+## Error Handling
+
+### Toast Notifications
+
+```typescript
+import { useToast } from '@/shared/hooks/useToast'
+
+const { showSuccess, showError, showWarning } = useToast()
+
+try {
+  await proposalService.uploadDocument(file)
+  showSuccess('Uploaded', 'Document uploaded successfully')
+} catch (error: unknown) {
+  const err = error as { response?: { data?: { detail?: string } } }
+  const message = err.response?.data?.detail || 'Upload failed'
+  showError('Upload Failed', message)
+}
+```
+
+### Error Boundaries
+
+Wrap sections of your app in error boundaries to catch rendering errors:
+
+```typescript
+import { ErrorBoundary } from 'react-error-boundary'
+
+<ErrorBoundary
+  FallbackComponent={ErrorFallback}
+  onReset={() => window.location.reload()}
+>
+  <YourComponent />
+</ErrorBoundary>
+```
+
+## Polling Pattern (AI Operations)
+
+For long-running AI operations, implement polling:
+
+```typescript
+const POLLINTERVAL = 3000 // 3 seconds
+const MAXPOLLTIME = 5 * 60 * 1000 // 5 minutes
+
+const pollForCompletion = useCallback(async () => {
+  const startTime = Date.now()
+
+  const poll = async () => {
+    if (Date.now() - startTime > MAXPOLLTIME) {
+      showError('Timeout', 'Operation timed out')
+      return
+    }
+
+    const status = await proposalService.getAnalysisStatus(proposalId)
+
+    if (status === 'completed') {
+      showSuccess('Complete', 'Analysis finished')
+      refetch()
+    } else if (status === 'failed') {
+      showError('Failed', 'Analysis failed')
+    } else {
+      setTimeout(poll, POLLINTERVAL)
+    }
+  }
+
+  poll()
+}, [proposalId, refetch, showSuccess, showError])
+```
+
+## Code Style
+
+### Import Order
+
+```typescript
+// 1. React
+import { useState, useEffect, useCallback } from 'react'
+
+// 2. Third-party
+import { FileText, Upload, AlertTriangle } from 'lucidereact'
+import { useQuery, useMutation } from '@tanstack/reactquery'
+
+// 3. Shared (use @/ alias)
+import { Button } from '@/shared/components/ui/Button'
+import { useToast } from '@/shared/hooks/useToast'
+import { apiClient } from '@/shared/services/apiClient'
+
+// 4. Feature-specific
+import { proposalService } from '@/tools/proposalwriter/services/proposalService'
+import { useProposal } from '../hooks/useProposal'
+
+// 5. Styles (last)
+import styles from './Component.module.css'
+```
+
+### Naming Conventions
+
+| Element | Convention | Example |
+|---------|------------|----------|
+| Component files | `PascalCase.tsx` | `Button.tsx`, `ProposalWriterPage.tsx` |
+| Utility files | `camelCase.ts` | `apiClient.ts`, `tokenManager.ts` |
+| Directories | `kebabcase` | `proposalwriter/`, `ui/` |
+| Components | `PascalCase` | `Step1InformationConsolidation` |
+| Hooks | `useCamelCase` | `useProposal`, `useToast` |
+| Interfaces | `PascalCase` | `ButtonProps`, `Proposal` |
+| Constants | `SCREAMINGSNAKE` | `MAXFILESIZE`, `POLLINTERVAL` |
+
+### Prettier Configuration
+
+```json
+{
+  "semi": false,
+  "singleQuote": true,
+  "tabWidth": 2,
+  "trailingComma": "es5",
+  "printWidth": 100,
+  "arrowParens": "avoid"
+}
+```
+
+## Testing
+
+The project uses Vitest with React Testing Library:
+
+```typescript
+import { render, screen, fireEvent } from '@testing-library/react'
+import { describe, it, expect, vi } from 'vitest'
+import { Button } from './Button'
+
+describe('Button', () => {
+  it('calls onClick when clicked', () => {
+    const handleClick = vi.fn()
+    render(<Button onClick={handleClick}>Click me</Button>)
+
+    fireEvent.click(screen.getByText('Click me'))
+
+    expect(handleClick).toHaveBeenCalledOnce()
+  })
+  
+  it('is disabled when loading', () => {
+    render(<Button disabled>Loading</Button>)
+    
+    expect(screen.getByText('Loading')).toBeDisabled()
+  })
+})
+```
+
+### Run Tests
+
+```bash
+# Run all tests
+npm run test
+
+# Run specific file
+npm run test -- path/to/file.test.ts
+
+# Run tests matching pattern
+npm run test -- -t "test name"
+
+# With coverage
+npm run test:coverage
+```
+
+## Build and Deployment
+
+### Development Build
+
+```bash
+npm run dev
+```
+
+Runs on port 3000 with hot module replacement.
+
+### Production Build
+
+```bash
+npm run build
+```
+
+Outputs to `dist/` directory. The build:
+- Minifies JavaScript and CSS
+- Tree-shakes unused code
+- Optimizes assets
+- Generates source maps
+
+### Preview Production Build
+
+```bash
+npm run preview
+```
+
+Serves the production build locally for testing.
+
+## Key Features
+
+### Proposal Writer
+
+The main feature is a multi-step proposal writing workflow:
+
+**Location**: `src/tools/proposalwriter/`
+
+**Components**:
+- `ProposalWriterPage.tsx` - Main orchestrator
+- `Step1InformationConsolidation.tsx` - RFP upload and analysis
+- `Step2ConceptReview.tsx` - Concept document review
+- `Step3StructureWorkplan.tsx` - Outline and structure
+- `Step4ProposalReview.tsx` - Final proposal review
+
+**Services**:
+- `proposalService.ts` - All API calls for proposals
+
+**Flow**:
+1. User uploads RFP document
+2. AI analyzes RFP requirements
+3. User reviews and approves concept
+4. AI generates proposal structure
+5. User reviews and exports final proposal
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Backend Development" icon="python" href="/development/backend">
+    Learn about FastAPI, Lambda workers, and AI integration
+  </Card>
+  
+  <Card title="Infrastructure" icon="aws" href="/development/infrastructure">
+    Understand AWS CDK and deployment configuration
+  </Card>
+</CardGroup>

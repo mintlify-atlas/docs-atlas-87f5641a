@@ -1,0 +1,543 @@
+---
+title: 'Infrastructure'
+description: 'AWS CDK and SAM infrastructure setup and deployment'
+icon: 'aws'
+---
+
+## Overview
+
+The IGAD Innovation Hub uses a hybrid infrastructure approach:
+
+- **AWS CDK** (TypeScript) - For creating AWS resources (Cognito, DynamoDB, S3)
+- **AWS SAM** (YAML) - For deploying Lambda functions and API Gateway
+- **Deployment Scripts** - Bash scripts that orchestrate fullstack deployments
+
+<Info>
+The application runs entirely on AWS serverless infrastructure with no traditional servers to manage.
+</Info>
+
+## Infrastructure Components
+
+<CardGroup cols={2}>
+  <Card title="Frontend Hosting" icon="react">
+    - **S3 Bucket** for static files
+    - **CloudFront CDN** for global distribution
+    - **CloudFront Function** for SPA routing
+  </Card>
+  
+  <Card title="Backend API" icon="server">
+    - **Lambda Functions** (API + Workers)
+    - **API Gateway** REST API
+    - **Lambda Web Adapter** layer
+  </Card>
+  
+  <Card title="Database" icon="database">
+    - **DynamoDB** single-table design
+    - **Global Secondary Index** (GSI1)
+    - Pay-per-request billing
+  </Card>
+  
+  <Card title="Authentication" icon="shield">
+    - **Cognito User Pool**
+    - **User Pool Client**
+    - **Custom attributes** (org, role, country)
+  </Card>
+  
+  <Card title="Storage" icon="folder">
+    - **S3 Bucket** for documents
+    - **S3 Vectors** for embeddings
+    - Versioning and lifecycle rules
+  </Card>
+  
+  <Card title="AI Services" icon="brain">
+    - **Bedrock** (Claude Sonnet 4)
+    - **Knowledge Base** integration
+    - Timeout: 5 minutes for API, 15 for workers
+  </Card>
+</CardGroup>
+
+## AWS SAM Template
+
+The main deployment template is `igadapp/template.yaml`:
+
+### Key Resources
+
+#### 1. API Lambda Function
+
+```yaml
+ApiFunction:
+  Type: AWS::Serverless::Function
+  Properties:
+    CodeUri: backend/dist
+    Handler: bootstrap
+    Runtime: python3.11
+    MemorySize: 512
+    Timeout: 300  # 5 minutes
+    Architectures:
+      - arm64
+    Environment:
+      Variables:
+        PORT: 8080
+        AWSLAMBDAEXECWRAPPER: /opt/bootstrap
+        COGNITOCLIENTID: 7p11hp6gcklhctcr9qffne71vl
+        COGNITOUSERPOOLID: useast1IMi3kSuB8
+        TABLENAME: igadtestingmaintable
+        PROPOSALSBUCKET: !Ref ProposalDocumentsBucket
+        WORKERFUNCTIONNAME: !Ref AnalysisWorkerFunction
+        ENVIRONMENT: testing
+        CORSALLOWEDORIGINS: http://localhost:3000
+    Layers:
+      - !Sub "arn:aws:lambda:${AWS::Region}:753240598075:layer:LambdaAdapterLayerArm64:25"
+```
+
+<Note>
+The Lambda Web Adapter layer allows FastAPI to run in Lambda without modification.
+</Note>
+
+#### 2. Worker Lambda Function
+
+```yaml
+AnalysisWorkerFunction:
+  Type: AWS::Serverless::Function
+  Properties:
+    CodeUri: backend/dist
+    Handler: app.tools.proposalwriter.workflow.worker.handler
+    Runtime: python3.11
+    MemorySize: 1024
+    Timeout: 900  # 15 minutes for long-running AI tasks
+    Architectures:
+      - arm64
+```
+
+<Warning>
+Worker functions have a 15-minute timeout for complex AI operations. Ensure operations complete within this window.
+</Warning>
+
+#### 3. API Gateway
+
+```yaml
+ApiGateway:
+  Type: AWS::Serverless::Api
+  Properties:
+    StageName: prod
+    BinaryMediaTypes:
+      - 'multipart/formdata'
+      - 'application/pdf'
+      - 'application/octetstream'
+```
+
+#### 4. CloudFront Distribution
+
+```yaml
+WebsiteDistribution:
+  Type: AWS::CloudFront::Distribution
+  Properties:
+    DistributionConfig:
+      Origins:
+        - DomainName: !GetAtt WebsiteBucket.RegionalDomainName
+          Id: S3Origin
+          OriginAccessControlId: !GetAtt CloudFrontOriginAccessControl.Id
+        - DomainName: !Sub "${ApiGateway}.executeapi.${AWS::Region}.amazonaws.com"
+          Id: ApiOrigin
+          OriginPath: "/prod"
+      DefaultCacheBehavior:
+        TargetOriginId: S3Origin
+        ViewerProtocolPolicy: redirecttohttps
+      CacheBehaviors:
+        - PathPattern: "/api/*"
+          TargetOriginId: ApiOrigin
+          DefaultTTL: 0  # No caching for API
+```
+
+#### 5. S3 Document Bucket
+
+```yaml
+ProposalDocumentsBucket:
+  Type: AWS::S3::Bucket
+  Properties:
+    BucketName: !Sub 'igadproposaldocuments${AWS::AccountId}'
+    VersioningConfiguration:
+      Status: Enabled
+    LifecycleConfiguration:
+      Rules:
+        - Id: DeleteOldVersions
+          Status: Enabled
+          NoncurrentVersionExpirationInDays: 30
+```
+
+## AWS CDK Stacks
+
+The CDK code is in `igadapp/infrastructure/`:
+
+### Stack Structure
+
+```typescript
+// lib/igadhubstack.ts
+import * as cdk from 'awscdklib'
+import * as cognito from 'awscdklib/awscognito'
+import * as dynamodb from 'awscdklib/awsdynamodb'
+import * as s3 from 'awscdklib/awss3'
+
+export class IgadHubStack extends cdk.Stack {
+  constructor(scope: Construct, id: string, props: IgadHubStackProps) {
+    super(scope, id, props)
+    
+    const { environment, resourcePrefix } = props
+    
+    // Cognito User Pool
+    const userPool = new cognito.UserPool(this, 'UserPool', {
+      userPoolName: `${resourcePrefix}userpool`,
+      signInAliases: { email: true },
+      autoVerify: { email: true },
+      passwordPolicy: {
+        minLength: 8,
+        requireLowercase: true,
+        requireUppercase: true,
+        requireDigits: true,
+        requireSymbols: true,
+      },
+      removalPolicy: environment === 'production' 
+        ? cdk.RemovalPolicy.RETAIN 
+        : cdk.RemovalPolicy.DESTROY
+    })
+    
+    // DynamoDB Table
+    const table = new dynamodb.Table(this, 'MainTable', {
+      tableName: `${resourcePrefix}maintable`,
+      partitionKey: { name: 'PK', type: dynamodb.AttributeType.STRING },
+      sortKey: { name: 'SK', type: dynamodb.AttributeType.STRING },
+      billingMode: dynamodb.BillingMode.PAYPERREQUEST,
+      pointInTimeRecovery: environment === 'production',
+    })
+    
+    // GSI for alternative queries
+    table.addGlobalSecondaryIndex({
+      indexName: 'GSI1',
+      partitionKey: { name: 'GSI1PK', type: dynamodb.AttributeType.STRING },
+      sortKey: { name: 'GSI1SK', type: dynamodb.AttributeType.STRING },
+    })
+  }
+}
+```
+
+### Deploy CDK Stack
+
+```bash
+cd igadapp/infrastructure
+npm install
+npm run build
+
+# Deploy to testing
+npm run deploy:testing
+
+# Deploy to production
+npm run deploy:production
+```
+
+## Deployment Scripts
+
+The `igadapp/scripts/` directory contains deployment automation:
+
+### Fullstack Deployment (Testing)
+
+```bash
+#!/bin/bash
+# scripts/deployFullstacktesting.sh
+
+set -e
+
+export AWSPROFILE=IBDDEV
+PROJECTROOT="$(dirname "$SCRIPTDIR")"
+
+echo "🚀 IGAD Innovation Hub Testing Deployment"
+
+# 1. Setup S3 Vectors
+echo "🎯 Setting up S3 Vectors Infrastructure..."
+python3 -c '
+import boto3
+s3vectors = boto3.client("s3vectors", regionname="useast1")
+try:
+    s3vectors.listindexes(vectorBucketName="igadproposalsvectorstesting")
+except:
+    s3vectors.createVectorBucket(
+        vectorBucketName="igadproposalsvectorstesting",
+        encryptionConfiguration={"sseType": "AES256"}
+    )
+'
+
+# 2. Build Backend
+echo "🐍 Building Backend..."
+cd "$PROJECTROOT/backend"
+rm -rf dist
+mkdir -p dist
+cp -r app dist/
+cp -r requirements.txt dist/
+pip3 install -r requirements.txt -t dist/
+cp bootstrap dist/
+chmod +x dist/bootstrap
+
+# 3. Deploy Backend with SAM
+echo "☁️ Deploying Backend..."
+cd "$PROJECTROOT"
+sam build --template template.yaml
+sam deploy \
+  --stackname igadtesting \
+  --s3bucket igaddeploymentbucket \
+  --capabilities CAPABILITYIAM \
+  --region useast1 \
+  --profile IBDDEV
+
+# 4. Build Frontend
+echo "⚛️ Building Frontend..."
+cd "$PROJECTROOT/frontend"
+npm install
+npm run build
+
+# 5. Deploy Frontend to S3
+echo "📦 Deploying Frontend..."
+S3BUCKET="igadtestingfrontend"
+aws s3 sync dist/ s3://$S3BUCKET/ --delete --profile IBDDEV
+
+# 6. Invalidate CloudFront Cache
+CLOUDFRONTID=$(aws cloudformation describeStacks \
+  --stackname igadtesting \
+  --queryStacks[0].Outputs[?OutputKey=='CloudFrontDistributionId'].OutputValue \
+  --output text \
+  --profile IBDDEV)
+
+aws cloudfront createinvalidation \
+  --distributionid $CLOUDFRONTID \
+  --paths "/*" \
+  --profile IBDDEV
+
+echo "✅ Deployment Complete!"
+```
+
+### Deploy Options
+
+```bash
+# Full deployment (frontend + backend)
+./scripts/deployFullstacktesting.sh
+
+# Backend only
+./scripts/deployFullstacktesting.sh --backendonly
+
+# Frontend only
+./scripts/deployFullstacktesting.sh --frontendonly
+
+# Production (requires confirmation)
+./scripts/deployFullstackproduction.sh
+```
+
+<Warning>
+Production deployments require manual confirmation and should only be run after thorough testing.
+</Warning>
+
+## Environment Configuration
+
+Environment-specific settings are in `igadapp/config/`:
+
+### Testing Configuration
+
+```json
+// config/testing.json
+{
+  "environment": "testing",
+  "resourcePrefix": "igadtesting",
+  "region": "useast1",
+  "cognito": {
+    "userPoolId": "useast1IMi3kSuB8",
+    "clientId": "7p11hp6gcklhctcr9qffne71vl"
+  },
+  "dynamodb": {
+    "tableName": "igadtestingmaintable"
+  },
+  "s3": {
+    "documentsBucket": "igadproposaldocuments123456",
+    "vectorsBucket": "igadproposalsvectorstesting"
+  },
+  "cors": {
+    "allowedOrigins": [
+      "http://localhost:3000",
+      "https://testigadhub.alliance.cgiar.org"
+    ]
+  }
+}
+```
+
+## IAM Permissions
+
+The Lambda functions require the following permissions:
+
+### API Function Permissions
+
+```yaml
+Policies:
+  - AWSLambdaBasicExecutionRole
+  - Statement:
+      # Cognito
+      - Effect: Allow
+        Action:
+          - cognitoIdp:AdminInitiateAuth
+          - cognitoIdp:AdminGetUser
+          - cognitoIdp:ListUsers
+        Resource: '*'
+      
+      # DynamoDB
+      - Effect: Allow
+        Action:
+          - dynamodb:GetItem
+          - dynamodb:PutItem
+          - dynamodb:UpdateItem
+          - dynamodb:DeleteItem
+          - dynamodb:Query
+          - dynamodb:Scan
+        Resource:
+          - !Sub 'arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/igadtestingmaintable'
+          - !Sub 'arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/igadtestingmaintable/index/*'
+      
+      # Bedrock
+      - Effect: Allow
+        Action:
+          - bedrock:InvokeModel
+          - bedrock:InvokeModelWithResponseStream
+        Resource: '*'
+      
+      # S3
+      - Effect: Allow
+        Action:
+          - s3:PutObject
+          - s3:GetObject
+          - s3:DeleteObject
+          - s3:ListBucket
+        Resource:
+          - !Sub '${ProposalDocumentsBucket.Arn}/*'
+          - !GetAtt ProposalDocumentsBucket.Arn
+      
+      # S3 Vectors
+      - Effect: Allow
+        Action:
+          - s3vectors:PutVectors
+          - s3vectors:QueryVectors
+          - s3vectors:GetVectors
+        Resource:
+          - !Sub 'arn:aws:s3vectors:${AWS::Region}:${AWS::AccountId}:bucket/igadproposalsvectorstesting'
+      
+      # Lambda (invoke workers)
+      - Effect: Allow
+        Action:
+          - lambda:InvokeFunction
+        Resource: !GetAtt AnalysisWorkerFunction.Arn
+```
+
+## Resource Naming
+
+All resources follow a consistent naming pattern:
+
+| Resource | Pattern | Example |
+|----------|---------|----------|
+| DynamoDB Table | `{env}maintable` | `igadtestingmaintable` |
+| Lambda Function | `{stackname}{Function}` | `igadtestingApiFunction` |
+| S3 Bucket | `{purpose}{accountid}` | `igadproposaldocuments123456` |
+| Cognito Pool | `{env}userpool` | `igadtestinguserpool` |
+| CloudFront | `{stackname}distribution` | `igadtestingdistribution` |
+
+## Monitoring and Logging
+
+### CloudWatch Logs
+
+All Lambda functions log to CloudWatch:
+
+```bash
+# View API function logs
+aws logs taillog \
+  --loggroupname /aws/lambda/igadtestingApiFunction \
+  --follow \
+  --profile IBDDEV
+
+# View worker function logs
+aws logs taillog \
+  --loggroupname /aws/lambda/igadtestingAnalysisWorkerFunction \
+  --follow \
+  --profile IBDDEV
+```
+
+### CloudWatch Metrics
+
+Key metrics to monitor:
+
+- **Lambda Invocations** - Request volume
+- **Lambda Duration** - Performance
+- **Lambda Errors** - Error rate
+- **DynamoDB ConsumedReadCapacity** - Database usage
+- **S3 Requests** - Storage usage
+- **CloudFront Requests** - Frontend traffic
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="Lambda timeout errors">
+    1. Check CloudWatch logs for the function
+    2. Increase timeout in `template.yaml` (max 900s for workers)
+    3. Optimize AI prompts to reduce processing time
+    4. Consider breaking operations into smaller chunks
+  </Accordion>
+  
+  <Accordion title="DynamoDB throttling">
+    1. Check ConsumedReadCapacity metrics
+    2. Verify using pagination for large queries
+    3. Consider adding more GSIs for common queries
+    4. Use `BatchGetItem` for multiple items
+  </Accordion>
+  
+  <Accordion title="S3 Vectors errors">
+    1. Verify bucket exists: `aws s3vectors listindexes --vectorBucketName igadproposalsvectorstesting`
+    2. Create if missing: Run `scripts/setupS3vectors.py`
+    3. Check IAM permissions for s3vectors actions
+  </Accordion>
+  
+  <Accordion title="CORS errors">
+    1. Verify `CORSALLOWEDORIGINS` environment variable
+    2. Check CloudFront cache behavior for `/api/*`
+    3. Ensure frontend URL matches allowed origins
+    4. Test with `curl` to isolate frontend vs backend issues
+  </Accordion>
+  
+  <Accordion title="CloudFront deployment not updating">
+    1. Build fails to upload: Check S3 bucket permissions
+    2. Old content showing: Invalidate CloudFront cache
+    ```bash
+    aws cloudfront createinvalidation \
+      --distributionid EDISTID \
+      --paths "/*" \
+      --profile IBDDEV
+    ```
+    3. Wait 35 minutes for invalidation to complete
+  </Accordion>
+</AccordionGroup>
+
+## Cost Optimization
+
+<Card title="Serverless Cost Tips" icon="dollar-sign">
+  - **Lambda**: Pay per invocation, use ARM64 for 20% savings
+  - **DynamoDB**: Pay-per-request is cheaper for variable workloads
+  - **S3**: Use lifecycle rules to delete old document versions
+  - **CloudFront**: PriceClass100 (US/EU only) reduces costs
+  - **Bedrock**: Claude usage is the main cost driver - optimize prompts
+</Card>
+
+## Next Steps
+
+<CardGroup cols={3}>
+  <Card title="Setup Guide" icon="laptop-code" href="/development/setup">
+    Return to local development setup
+  </Card>
+  
+  <Card title="Frontend Guide" icon="react" href="/development/frontend">
+    Learn about React frontend architecture
+  </Card>
+  
+  <Card title="Backend Guide" icon="python" href="/development/backend">
+    Explore FastAPI backend patterns
+  </Card>
+</CardGroup>
